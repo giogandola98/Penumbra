@@ -27,9 +27,16 @@ static void trace_free(void *data)
     free(data);
 }
 
+/* Close the file after this long without new data, reopen (append) when data comes again.
+ * A closed file has its directory entry (size) on the card, so a long-lived trace (e.g. mlv_play's)
+ * stays consistent if the battery is pulled while the camera idles or sleeps. Each write is held
+ * against Canon's deep sleep by FIO_WriteFile itself (src/fio-ml.c), not for the file's lifetime. */
+#define TRACE_IDLE_CLOSE_MS 2000
+
 static void trace_task(volatile trace_entry_t *ctx)
 {
     char *write_buf = trace_alloc(ctx->buffer_size);
+    int last_write_ms = get_ms_clock();
     ctx->task_state = TRACE_TASK_STATE_RUNNING;
 
     while((ctx->task_state == TRACE_TASK_STATE_RUNNING) || (ctx->buffer_read_pos != ctx->buffer_write_pos))
@@ -58,11 +65,19 @@ static void trace_task(volatile trace_entry_t *ctx)
             ctx->buffer_read_pos += used;
             ctx->buffer_read_pos %= ctx->buffer_size;
 
+            if (!ctx->file_handle)
+            {
+                /* closed while idle */
+                ctx->file_handle = FIO_CreateFileOrAppend((const char *)ctx->file_name);
+            }
+
             uint32_t total = 0;
             while(total < used)
             {
                 /* write as much as possible at once */
-                uint32_t written = FIO_WriteFile(ctx->file_handle, &write_buf[total], used - total);
+                uint32_t written = ctx->file_handle
+                    ? (uint32_t) FIO_WriteFile(ctx->file_handle, &write_buf[total], used - total)
+                    : 0;
 
                 /* check for writing errors */
                 if(written > 0)
@@ -71,23 +86,32 @@ static void trace_task(volatile trace_entry_t *ctx)
                 }
                 else
                 {
-                    FIO_CloseFile(ctx->file_handle);
+                    if (ctx->file_handle) FIO_CloseFile(ctx->file_handle);
+                    ctx->file_handle = NULL;
                     trace_free(ctx->buffer);
                     trace_free(write_buf);
                     ctx->task_state = TRACE_TASK_STATE_DEAD;
                     return;
                 }
             }
+            last_write_ms = get_ms_clock();
         }
         else
         {
             uint32_t dummy = 0;
             msg_queue_receive(ctx->queue, &dummy, ctx->sleep_time);
+
+            if (ctx->file_handle && ctx->buffer_read_pos == ctx->buffer_write_pos &&
+                get_ms_clock() - last_write_ms >= TRACE_IDLE_CLOSE_MS)
+            {
+                FIO_CloseFile(ctx->file_handle);
+                ctx->file_handle = NULL;
+            }
         }
     }
 
     /* we are doing the cleanup in this task */
-    FIO_CloseFile(ctx->file_handle);
+    if (ctx->file_handle) FIO_CloseFile(ctx->file_handle);
     trace_free(ctx->buffer);
     trace_free(write_buf);
     
@@ -207,7 +231,7 @@ uint32_t trace_stop(uint32_t context, uint32_t wait)
     }
 
     /* try to clean up as much as possible */
-    FIO_CloseFile(ctx->file_handle);
+    if (ctx->file_handle) FIO_CloseFile(ctx->file_handle);
     trace_free(ctx->buffer);
 
     ctx->file_handle = NULL;
@@ -371,7 +395,7 @@ uint32_t trace_vwrite(uint32_t context, tsc_t tsc, char *string, va_list ap)
         char tmp[32];
         
         linebuffer[linebuffer_pos++] = ' ';
-        snprintf(tmp, sizeof(tmp), "%d", (current_task->taskId & 0xFF));
+        snprintf(tmp, sizeof(tmp), "%d", (get_current_task_id() & 0xFF));
         memcpy(&linebuffer[linebuffer_pos], tmp, strlen(tmp));
         linebuffer_pos += strlen(tmp);
         linebuffer[linebuffer_pos++] = ' ';
@@ -379,7 +403,7 @@ uint32_t trace_vwrite(uint32_t context, tsc_t tsc, char *string, va_list ap)
     }
     if(ctx->format & TRACE_FMT_TASK_NAME)
     {
-        char *name = get_current_task_name();
+        const char *name = get_current_task_name();
         
         linebuffer[linebuffer_pos++] = ' ';
         memcpy(&linebuffer[linebuffer_pos], name, strlen(name));
