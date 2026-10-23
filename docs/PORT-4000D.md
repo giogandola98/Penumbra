@@ -15,7 +15,7 @@ work (forum threads, qemu-eos `2000d_test` branch) is checked first and reused o
 | 1 | done (QEMU-EOS-Optimized) | Canon GUI and menu in emulation; see that repo's `docs/models/4000D.md` |
 | 2 | done | 161 of 167 stubs located (152 high, 9 medium confidence), 6 audio/PTP ones missing and not needed by the minimal build; table and method in `firmware/4000D-stubs.md`; `tools/check_stubs.py` re-checks every stub against the ROM in the emulation job |
 | 3 | merged into 4 | the normal build is used directly (QEMU scenario `ml-full`) instead of a separate hello-world target |
-| 4 | in progress | `platform/4000D.110` builds with `FATAL_WARNINGS=y` (CI build job); emulation status below |
+| 4 | boots in QEMU | `platform/4000D.110` builds with `FATAL_WARNINGS=y` (CI build job). CI run 56 (emulation job): stub check 161/161 OK; `ml-full` and `ml-hold` boot ML (ml_init, menu_task, shoot_task ... in the task log; `[PS] hold boot`, `hold menu` / `release menu` when Delete opens and MENU closes the ML menu; `menu.png` in the artifact); no QEMU errors. Not yet reviewed by eye: the screenshots |
 | 5-7 | not started | |
 
 Platform facts used by step 4 (evidence in `firmware/4000D-stubs.md`): main firmware `0xFE0C0000`, kernel copied
@@ -31,7 +31,26 @@ memory, screenshot) only. Constants of those code paths that could not be locate
 
 Buttons: the 4000D shares the 1200D/1300D layout (Av and Erase on one key), so `gui.h` starts from the 1300D
 codes; the `canon` emulation scenario sends each emulated key once and logs the GUI events Canon derives from it
-(`keys.json`), which checks them.
+(`keys.json`), which checks them. Run 56 confirmed every code in `gui.h` that the emulator can send: MENU 6,
+INFO 7, PLAY 0xB, Erase 0xD, Q 0x1C, SET 4, up/down/left/right 0x27/0x29/0x25/0x23, zoom in/out 0xE/0x10, and Av
+as event 0x61 (`GMT_OLC_INFO_CHANGED`, used by `CONFIG_MENU_WITH_AV`). The emulator's key mapping is borrowed
+from the 1200D, so the real camera's MPU codes still need one check (capture below).
+
+Idle in emulation (run 56, relative only): canon 213 WFI/s, 86 task switches/s; ml-full 254 switches/s
+(`audio_common_task` ~50/s although audio is off: candidate for the photo profile).
+
+### Next steps
+1. Look at `boot.png` / `menu.png` / `key*.png` of the 4000D emulation artifact; then the photo profile
+   (`ML_PROFILE`, `POWERSAVE_HOLD`) for 4000D as for EOSM, and features one by one (step 5).
+2. Locate the LiveView/movie constants still marked "1300D value, not verified" before enabling LiveView.
+3. Missing stubs (audio API, `ptpPropSetUILock`) only if a feature needs them.
+
+### Useful captures from the real camera (read-only, logging to the card)
+- MPU message log at boot and while pressing every button (replaces the borrowed 1200D/600D tables in QEMU).
+- DryosDebugMsg log (`GUI_Control:%d` lines) while pressing every button: confirms `gui.h` on hardware.
+- A RAM dump of `0x351A4..0x35260` with and without half-shutter pressed (HALFSHUTTER_PRESSED), and of the
+  display struct `0x31010..0x310C0` with the screen on and off (DISPLAY_IS_ON).
+- Card LED: whether `0xC022D1E0` with `0x93D800` / `0x83DC00` lights it (needs one write; only with consent).
 
 ## Steps
 | # | Step | Verified by |
