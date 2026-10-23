@@ -217,6 +217,16 @@ def main():
     result["ml_holds_window_end"] = int(ps[-1]) if ps else None
     result["ps_log"] = [l.strip()[-80:] for l in re.sub(r"\x1b\[[0-9;]*m", "", text).splitlines() if "[PS] " in l][:40]
     result["pm_tail"] = [l.strip()[-100:] for l in upto.splitlines() if "[PM] " in l][-6:]
+    # Who makes Canon toggle its counter during the window: the log lines (task switches,
+    # other DebugMsgs) just before the first few DisablePowerSave messages.
+    wl = window.splitlines()
+    ctx = []
+    for i, l in enumerate(wl):
+        if "[PM] DisablePowerSave" in l:
+            ctx.append([x.strip()[-100:] for x in wl[max(0, i - 8):i + 1]])
+            if len(ctx) == 3:
+                break
+    result["pm_context"] = ctx
     result["self_refresh"] = len(re.findall(r"pmSelfRefresh", text))
     with open(os.path.join(a.out, "result.json"), "w") as f:
         json.dump(result, f, indent=1)

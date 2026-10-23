@@ -57,6 +57,10 @@ def main():
                                                r.get("pm_calls_in_window", 0), r.get("self_refresh", 0)))
             for l in r.get("pm_tail", []) + r.get("ps_log", [])[:12]:
                 print("    %s" % l)
+            for n, block in enumerate(r.get("pm_context", [])):
+                print("    context of DisablePowerSave #%d in the window:" % (n + 1))
+                for l in block:
+                    print("      %s" % l)
     print("\nwakeups/s = WFI (idle entries) per second; busy ratio = 1 - halted/elapsed host time "
           "(TCG over-estimates it). See docs/EMULATION.md.")
 
