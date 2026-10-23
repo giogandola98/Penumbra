@@ -13,7 +13,7 @@
 #   WARMUP_S, MEASURE_S         boot time excluded from, and length of, the measurement window (40, 30)
 #   TASKS=1        also count DryOS task switches with qemu-eos `-d tasks` (default 1)
 #   OUT            output dir (default emu-out/CAM)
-#   PARALLEL=1     run the scenarios at once, if the host has the cores (default 0: one after the other)
+#   PARALLEL=0     run the scenarios one after the other (default 1: at once, if the host has the cores)
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
@@ -79,13 +79,11 @@ run_scenario() {   # $1 = scenario; disk images and console output are per scena
     return $st
 }
 
-# PARALLEL=1: all scenarios at once. Each is a fixed wall-clock timeline (warmup + window) that keeps one
-# host core busy at most, so the camera takes one timeline instead of one per scenario (QEMU-EOS-Optimized
-# bench: same screenshots and rates, pair wall time -48 %). Not the default yet: in CI runs 34/38 the
-# plugin's window started ~11.7 s late (result.json plugin_clock_lag_s), i.e. QEMU loaded its plugins
-# that long after scenario.py started it, so the measured window was 18-22 s instead of 30 s.
+# PARALLEL=1 (default): all scenarios at once. Each is a fixed wall-clock timeline (warmup + window) that
+# keeps one host core busy at most, so the camera takes one timeline instead of one per scenario
+# (QEMU-EOS-Optimized bench: same screenshots and rates, pair wall time -48 %). PARALLEL=0: one by one.
 rc=0
-if [ "${PARALLEL:-0}" = 1 ] && [ "$(nproc)" -ge "${#scenarios[@]}" ]; then
+if [ "${PARALLEL:-1}" = 1 ] && [ "$(nproc)" -ge "${#scenarios[@]}" ]; then
     pids=()
     for sc in "${scenarios[@]}"; do
         mkdir -p "$OUT/$sc"

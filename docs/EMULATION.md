@@ -106,9 +106,12 @@ What does not (qemu-eos limitations, not ML bugs):
 
 The `emulation` job pulls the pinned image (seconds; no QEMU build here any more) and runs the SD tooling test.
 Camera scenarios run only when that camera's ROMs are in the package; otherwise the step prints
-`SKIPPED: no ROM for <CAM>` and succeeds. `PARALLEL=1` runs a camera's scenarios at once (one timeline
-instead of one per scenario, ~-50 s per camera). It is off by default: in CI runs 34 and 38 the plugin's window
-started ~11.7 s late in that mode (`plugin_clock_lag_s` in `result.json`), so the window was 18-22 s, not 30 s.
+`SKIPPED: no ROM for <CAM>` and succeeds. A camera's scenarios run at once (`PARALLEL=0` to serialise): each is
+a fixed wall-clock timeline, so the camera takes one timeline instead of one per scenario.
+The timeline starts when QEMU's monitor socket appears (`qemu_start_s` in `result.json`), not when QEMU is
+launched: the plugin times its window from its own load, and a cold start of the freshly pulled binary on the busy
+runner took up to ~12 s, which used to shorten the 30 s window (to 18-25 s in runs 34, 38, 40).
+`plugin_clock_lag_s` (quit time vs the plugin's last timestamp) checks that both clocks agree.
 Results are uploaded as artifact `ml-optimized-emulation` (tables, JSON, logs, screenshots; never ROMs,
 disk images or binaries).
 

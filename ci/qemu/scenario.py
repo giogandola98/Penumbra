@@ -132,12 +132,19 @@ def main():
     log_start = log_end = 0
     t_quit = None
     try:
-        for _ in range(100):
+        for _ in range(600):
             if os.path.exists(mon) or q.poll() is not None:
                 break
             time.sleep(0.1)
         if q.poll() is not None:
             raise RuntimeError("QEMU exited early with code %s (see qemu.log)" % q.returncode)
+        if not os.path.exists(mon):
+            raise RuntimeError("QEMU monitor did not appear in 60 s")
+        # The timeline starts when QEMU is up, not at Popen: QEMU loads its plugins (whose window is
+        # timed from their load) just before it creates the monitor socket, and a cold start of the
+        # binary on a busy runner took ~10 s, which used to cut the measurement window by as much.
+        result["qemu_start_s"] = round(time.monotonic() - t0, 2)
+        t0 = time.monotonic()
 
         time.sleep(max(0, a.warmup - (time.monotonic() - t0)))
         log_start = os.path.getsize(log)
