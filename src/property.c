@@ -20,7 +20,11 @@
 #include "property.h"
 #include "bmp.h"
 
-#ifdef CONFIG_DIGIC_678X
+/* Per-property write whitelist (platform's property_whitelist.h, prop_write_allow[]): always on DIGIC 6/7/8,
+ * and on older cameras whose port enables prop_request_change one property at a time
+ * (CONFIG_PROP_WRITE_WHITELIST, e.g. 4000D). */
+#if defined(CONFIG_DIGIC_678X) || defined(CONFIG_PROP_WRITE_WHITELIST)
+#define PROP_WRITE_WHITELIST
 #include "property_whitelist.h"
 #endif
 
@@ -303,7 +307,7 @@ static void prop_reset_ack(uint32_t property)
 // not Digic generation based.  We probably get cleaner code if we
 // can limit properties for older cams too, sometimes they special
 // case behaviour, where banning an individual property might be cleaner.
-#ifdef CONFIG_DIGIC_678X
+#ifdef PROP_WRITE_WHITELIST
 static int is_prop_allowed(uint32_t property)
 {
     for(int32_t i = 0;
@@ -396,7 +400,7 @@ ok:
     (void)0;
     //~ printf("prop:%x data:%x len:%x\n", property, MEM(addr), len);
 
-    #ifdef CONFIG_DIGIC_678X
+    #ifdef PROP_WRITE_WHITELIST
     if (is_prop_allowed(property))
     {
         // SJE TODO could put some logging here, but I'm betting

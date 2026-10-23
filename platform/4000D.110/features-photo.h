@@ -4,3 +4,10 @@
 
 /* Shoot menu */
 #define FEATURE_INTERVALOMETER
+
+/* Canon property writes, restricted to platform/4000D.110/property_whitelist.h */
+#define CONFIG_PROP_REQUEST_CHANGE
+#define CONFIG_PROP_WRITE_WHITELIST
+
+#define FEATURE_HDR_BRACKETING
+#define FEATURE_BULB_TIMER
