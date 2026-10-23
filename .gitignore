@@ -86,3 +86,5 @@ syntax: regexp
 ROM*.BIN
 SFDATA.BIN
 /roms/
+build-report.txt
+cppcheck-report.txt
