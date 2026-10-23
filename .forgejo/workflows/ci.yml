@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    # Label maps to the host executor of runner linux-podman-105 (no container: support there),
+    # Label maps to a host-executor runner (no container: support there),
     # which has podman. So the job builds ci/Containerfile and runs every step inside it.
     runs-on: linux-podman
     env:
@@ -93,6 +93,8 @@ jobs:
         env:
           # Personal access token with only read:package (docs/EMULATION.md). Absent => job token, then SKIPPED.
           ROM_TOKEN: ${{ secrets.ROM_TOKEN }}
+          # Owner (a private org) of the canon-rom package; unset => scenarios SKIPPED.
+          ROM_PKG_OWNER: ${{ vars.ROM_PKG_OWNER }}
           JOB_TOKEN: ${{ github.token }}
         run: |
           start=$(date +%s)

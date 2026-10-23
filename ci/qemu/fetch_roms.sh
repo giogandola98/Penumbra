@@ -1,5 +1,5 @@
 #!/bin/bash
-# Fetch one camera's ROM dumps from the private Forgejo generic package into DEST/CAM/.
+# Fetch one camera's ROM dumps from a private Forgejo generic package into DEST/CAM/.
 # Runs on the CI host (outside containers). See docs/EMULATION.md "ROM handling".
 #
 # Usage: ci/qemu/fetch_roms.sh CAM DEST
@@ -12,14 +12,19 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 CAM=${1:?usage: fetch_roms.sh CAM DEST}
 DEST=${2:?usage: fetch_roms.sh CAM DEST}
-FORGEJO_URL=${FORGEJO_URL:-${GITHUB_SERVER_URL:-<forgejo-server>}}
-OWNER=${ROM_PKG_OWNER:-<private-org>}
+FORGEJO_URL=${FORGEJO_URL:-${GITHUB_SERVER_URL:-}}
+OWNER=${ROM_PKG_OWNER:-}   # CI variable vars.ROM_PKG_OWNER: the private org/user that owns the package
 PKG=canon-rom
 
 case "$CAM" in *[!A-Za-z0-9]*|"") echo "bad CAM '$CAM'" >&2; exit 1;; esac
 plat=$(cd "$ROOT/platform" && ls -d "$CAM".[0-9]* 2>/dev/null | head -1)
 [ -n "$plat" ] || { echo "no platform/$CAM.<fw>" >&2; exit 1; }
 VERSION=$CAM-${plat#*.}
+
+if [ -z "$FORGEJO_URL" ] || [ -z "$OWNER" ]; then
+    echo "ROMs for $CAM: unavailable (FORGEJO_URL/GITHUB_SERVER_URL or ROM_PKG_OWNER not set)"
+    exit 3
+fi
 
 token=${ROM_TOKEN:-${JOB_TOKEN:-}}
 if [ -z "$token" ]; then

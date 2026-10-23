@@ -6,11 +6,11 @@
 #   CAM   camera model as in platform/CAM.<fw> (EOSM, 1100D, ...)
 #   DIR   directory containing ROM0.BIN, ROM1.BIN and optionally SFDATA.BIN
 #         (e.g. ~/Documents/roms/1100D)
-# Package: owner $ROM_PKG_OWNER (default <private-org>), name canon-rom, version CAM-<fw> (EOSM-202, 1100D-105).
+# Package: owner $ROM_PKG_OWNER (required; a private org), name canon-rom, version CAM-<fw> (EOSM-202, 1100D-105).
 #   --replace             delete an existing package version first
 #   --allow-public-owner  upload even if the owner is publicly visible (packages would be public too)
-# Credentials: <credentials-file> (FORGEJO_URL, FORGEJO_USER, FORGEJO_PASSWORD);
-# they reach curl through stdin (-K -), never through argv.
+# Credentials: FORGEJO_URL, FORGEJO_USER, FORGEJO_PASSWORD from the environment, or from the shell file
+# named by $FORGEJO_CREDENTIALS (kept outside the repo); they reach curl through stdin (-K -), never argv.
 set -euo pipefail
 replace=0 allow_public=0
 while [ $# -gt 0 ]; do
@@ -24,7 +24,7 @@ done
 CAM=${1:?usage: upload_roms.sh [--replace] CAM DIR}
 DIR=${2:?usage: upload_roms.sh [--replace] CAM DIR}
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-OWNER=${ROM_PKG_OWNER:-<private-org>}
+OWNER=${ROM_PKG_OWNER:?set ROM_PKG_OWNER to the private owner of the ROM package}
 PKG=canon-rom
 
 case "$CAM" in *[!A-Za-z0-9]*|"") echo "bad CAM '$CAM'" >&2; exit 2;; esac
@@ -38,8 +38,10 @@ for f in ROM0.BIN ROM1.BIN SFDATA.BIN; do
 done
 [ -f "$DIR/ROM1.BIN" ] || { echo "$DIR/ROM1.BIN missing" >&2; exit 2; }
 
-# shellcheck disable=SC1090
-. <credentials-file>
+if [ -n "${FORGEJO_CREDENTIALS:-}" ]; then
+    # shellcheck disable=SC1090
+    . "$FORGEJO_CREDENTIALS"
+fi
 : "${FORGEJO_URL:?}" "${FORGEJO_USER:?}" "${FORGEJO_PASSWORD:?}"
 
 fj() {   # fj CURL_ARGS... : authenticated curl, credentials via stdin config
@@ -51,7 +53,7 @@ vis=$(fj "$FORGEJO_URL/api/v1/orgs/$OWNER" | python3 -I -c 'import json,sys; pri
 [ -n "$vis" ] || vis=$(fj "$FORGEJO_URL/api/v1/users/$OWNER" | python3 -I -c 'import json,sys; print(json.load(sys.stdin).get("visibility",""))' 2>/dev/null || true)
 if [ -z "$vis" ]; then
     echo "owner '$OWNER' not found. Create a private org first, e.g.:" >&2
-    echo "  ~/.config/forgejo/fj.sh POST /orgs '{\"username\":\"$OWNER\",\"visibility\":\"private\"}'" >&2
+    echo "  POST $FORGEJO_URL/api/v1/orgs {\"username\":\"$OWNER\",\"visibility\":\"private\"}" >&2
     exit 1
 fi
 if [ "$vis" = public ] && [ "$allow_public" = 0 ]; then

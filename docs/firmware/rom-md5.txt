@@ -1,4 +1,4 @@
-# MD5 of the user's own ROM dumps (files are NOT in git; stored in private Forgejo org <private-org>,
+# MD5 of the maintainer's own ROM dumps (files are NOT in git; kept in a private package registry,
 # generic package canon-rom, version <CAM>-<FW>). Used by CI to verify downloads.
 1100D-105 ROM0.BIN f9329f8fa29b166c5249986a1aeb366c
 1100D-105 ROM1.BIN a9538f296a1549aec5546708b4f3047a
