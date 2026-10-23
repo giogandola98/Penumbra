@@ -5,6 +5,8 @@ Usage: compare.py CAM OUT_DIR SCENARIO...
 Deltas are relative to the first scenario (the Canon-only baseline).
 With display-off results (scenario.py --display-off-s) it also prints the deep-sleep table and checks
 the expectations of docs/analysis/powersave-hold.md; DEEP_SLEEP_ASSERT=1 turns a failed check into exit 1.
+A scenario without usable results (no result.json, no window rates, an error or an infrastructure
+timeout) always makes it exit 1: missing data is never a pass.
 """
 import json
 import os
@@ -46,7 +48,10 @@ EXPECT_SLEEP = {"canon": True, "ml-full": False, "ml-photo": None, "ml-hold": Tr
 
 def deep_sleep(out, rows):
     """Table + checks for the display-off segment. Returns the list of failed checks."""
-    rows = [(sc, r) for sc, r in rows if r and r.get("display_off")]
+    infra = [sc for sc, r in rows if r and r.get("infra_error")]
+    rows = [(sc, r) for sc, r in rows if r and r.get("display_off") and not r.get("infra_error")]
+    for sc in infra:
+        print("INFRA %s: deep-sleep checks not evaluated (infrastructure timeout)" % sc)
     if not rows:
         return []
     print("\n## Deep sleep: display off (%s key) for %.0f s after the window, then the same key\n" % (
@@ -79,8 +84,9 @@ def deep_sleep(out, rows):
         checks = []
         if want is not None:
             checks.append(("deep sleep %s" % ("entered" if want else "never entered"), slept == want))
-        if want is False and ctr:
-            checks.append(("Canon counter >= 1 in every sample", all(int(v) >= 1 for v in ctr)))
+        if want is False:
+            checks.append(("Canon counter >= 1 in every sample (%d samples)" % sum(ctr.values()),
+                           bool(ctr) and all(int(v) >= 1 for v in ctr)))
         if want:
             checks.append(("emulator: clocks gated, then woken by the key",
                            d["qemu_self_refresh"] > 0 and (d.get("wake") or {}).get("self_refresh_out", 0) > 0))
@@ -113,11 +119,17 @@ def main():
     print("# Idle comparison: %s (qemu-eos, relative numbers only)\n" % cam)
     print("| scenario | wakeups/s | Δ vs canon | IRQ/s | task sw/s | insns/wakeup | busy ratio | ML seen | window s |")
     print("|---|---:|---:|---:|---:|---:|---:|---|---:|")
+    missing = []
     for sc, r in rows:
         w = r.get("wakeups") if r else None
+        if r and r.get("infra_error"):
+            print("| %s | INFRASTRUCTURE TIMEOUT: %s | | | | | | | |" % (sc, r["infra_error"].replace("|", "/")[:120]))
+            missing.append("%s: infrastructure timeout" % sc)
+            continue
         if not w or not w.get("seconds") or (r and r.get("error")):
             why = (r.get("error") or "; ".join(r.get("qemu_errors", []))) if r else "no result"
             print("| %s | FAILED: %s | | | | | | | |" % (sc, why.replace("|", "/")[:120]))
+            missing.append("%s: no window results" % sc)
             continue
         delta = (w["wakeups_per_s"] - base["wakeups_per_s"]) if base else None
         print("| %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
@@ -160,8 +172,12 @@ def main():
     fails = deep_sleep(out, rows)
     print("\nwakeups/s = WFI (idle entries) per second; busy ratio = 1 - halted/elapsed host time "
           "(TCG over-estimates it). See docs/EMULATION.md.")
+    if missing:
+        print("scenarios without results: %s" % "; ".join(missing), file=sys.stderr)
     if fails and os.environ.get("DEEP_SLEEP_ASSERT") == "1":
         print("deep-sleep checks failed: %s" % "; ".join(fails), file=sys.stderr)
+        sys.exit(1)
+    if missing:
         sys.exit(1)
 
 

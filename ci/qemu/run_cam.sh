@@ -18,7 +18,10 @@
 #   DISPLAY_OFF_S  after the window: display off (INFO/DISP) for this long, then wake it with the same key
 #                  (deep-sleep check, docs/analysis/powersave-hold.md; default 30 on the 1100D, else 0)
 #   OUT            output dir (default emu-out/CAM)
-#   PARALLEL=0     run the scenarios one after the other (default 1: at once, if the host has the cores)
+#   PARALLEL       1: scenarios at once; 0: one after the other; auto (default): at once only if the host
+#                  is not loaded (1-min load average + scenarios <= 1.5 x nproc)
+# A scenario that ends in an INFRASTRUCTURE TIMEOUT (scenario.py exit 3: the emulator never reached a
+# step of its timeline) is run once more, alone; a second timeout fails the job as infrastructure.
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
@@ -60,6 +63,11 @@ echo "CAM=$CAM platform=${plats[0]} DryosDebugMsg=${debugmsg:-unknown} qemu-eos=
 # Canon's power-save counter in RAM (docs/firmware/1100D-powersave.md), sampled during the window.
 # Deep sleep (selfRefresh) is modelled by qemu-eos for the 1100D only.
 case "$CAM" in 1100D) pmctr=0x2B64; DISPLAY_OFF_S=${DISPLAY_OFF_S:-30} ;; *) pmctr=; DISPLAY_OFF_S=${DISPLAY_OFF_S:-0} ;; esac
+# Guest ready (scenario.py --ready-marker, DryosDebugMsg log): the window is timed from it, not from launch.
+# Canon: the display is on at the end of boot (1100D; other models: a stable screen). ML: its boot hold
+# is released (src/powersave.c), i.e. ML's init, ROM backup and module loading are over.
+canon_ready=(); case "$CAM" in 1100D) canon_ready=(--ready-marker 'TurnOnDisplay finish') ;; esac
+ml_ready=(--ready-marker '\[PS\] release boot ->')
 
 scenarios=(canon)
 [ -n "${ML_ZIP_FULL:-}" ] && scenarios+=(ml-full)
@@ -81,6 +89,8 @@ run_scenario() {   # $1 = scenario; disk images and console output are per scena
         ml-hold-ivl) zip=$ML_ZIP_HOLD; boot=--boot; seeds+=(--put "ML/SETTINGS/MAGIC.CFG:$work/ivl.cfg"); extra+=(--no-menu --active-hold intervalometer) ;;
     esac
     [ -n "$boot" ] && extra+=(--config-check)
+    extra+=(${canon_ready[@]+"${canon_ready[@]}"})
+    [ -n "$boot" ] && extra+=("${ml_ready[@]}")
     if [ -n "$zip" ]; then      # see make_sd_image.py --seed: skip ML's first-boot ROM backup
         for r in ROM0 ROM1; do
             [ -f "$romdir/$r.BIN" ] && seeds+=(--seed "ML/LOGS/$r.BIN:$(stat -c %s "$romdir/$r.BIN")")
@@ -108,11 +118,26 @@ run_scenario() {   # $1 = scenario; disk images and console output are per scena
     return $st
 }
 
-# PARALLEL=1 (default): all scenarios at once. Each is a fixed wall-clock timeline (warmup + window) that
-# keeps one host core busy at most, so the camera takes one timeline instead of one per scenario
-# (QEMU-EOS-Optimized bench: same screenshots and rates, pair wall time -48 %). PARALLEL=0: one by one.
+# Parallel: all scenarios at once. Each timeline keeps one host core busy at most, so the camera takes
+# one timeline instead of one per scenario (QEMU-EOS-Optimized bench: same screenshots and rates, pair
+# wall time -48 %). On a loaded host the scenarios would starve each other (and the monitor): one by one.
 rc=0
-if [ "${PARALLEL:-1}" = 1 ] && [ "$(nproc)" -ge "${#scenarios[@]}" ]; then
+retry=()
+report() {   # $1 scenario, $2 exit status, $3 label
+    case $2 in
+        0) ;;
+        3) echo "scenario $1: INFRASTRUCTURE TIMEOUT$3 (emulator too slow or unresponsive; not a functional result)"
+           retry+=("$1") ;;
+        *) echo "scenario $1 FAILED$3"; rc=1 ;;
+    esac
+}
+par=${PARALLEL:-auto}
+if [ "$par" = auto ]; then
+    load=$(cut -d' ' -f1 /proc/loadavg)
+    par=$(awk -v n="$(nproc)" -v l="$load" -v k="${#scenarios[@]}" 'BEGIN { print (l + k <= 1.5 * n) ? 1 : 0 }')
+    echo "PARALLEL=auto: $(nproc) CPUs, load $load, ${#scenarios[@]} scenarios -> PARALLEL=$par"
+fi
+if [ "$par" = 1 ] && [ "$(nproc)" -ge "${#scenarios[@]}" ]; then
     pids=()
     for sc in "${scenarios[@]}"; do
         mkdir -p "$OUT/$sc"
@@ -122,13 +147,25 @@ if [ "${PARALLEL:-1}" = 1 ] && [ "$(nproc)" -ge "${#scenarios[@]}" ]; then
     for i in "${!scenarios[@]}"; do
         st=0; wait "${pids[$i]}" || st=$?
         echo "== $CAM / ${scenarios[$i]} (parallel)"; cat "$OUT/${scenarios[$i]}/console.txt"
-        [ "$st" -eq 0 ] || { echo "scenario ${scenarios[$i]} FAILED"; rc=1; }
+        report "${scenarios[$i]}" "$st" ""
     done
 else
     for sc in "${scenarios[@]}"; do
         echo "== $CAM / $sc"
-        run_scenario "$sc" || { echo "scenario $sc FAILED"; rc=1; }
+        st=0; run_scenario "$sc" || st=$?
+        report "$sc" "$st" ""
     done
+fi
+# One more try, alone, for a scenario the emulator never got through; a second timeout fails the job.
+again=(${retry[@]+"${retry[@]}"}); retry=()
+for sc in ${again[@]+"${again[@]}"}; do
+    echo "== $CAM / $sc (retry after an infrastructure timeout, alone)"
+    mv "$OUT/$sc" "$OUT/$sc.infra-timeout"
+    st=0; run_scenario "$sc" || st=$?
+    report "$sc" "$st" " (retry)"
+done
+if [ "${#retry[@]}" -gt 0 ]; then
+    echo "INFRASTRUCTURE TIMEOUT twice: ${retry[*]} -- no functional result for them"; rc=1
 fi
 
 # With the display-off segment, compare.py also checks the deep-sleep expectations (DEEP_SLEEP_ASSERT=0: report only)
