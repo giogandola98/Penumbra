@@ -42,11 +42,11 @@ NSTUB(0xFF018734,  init_task)
 NSTUB(   0x16FB8,  additional_version)
 
 /** File I/O **/
-NSTUB(0xFF1FC684,  FIO_CloseFile)
-NSTUB(0xFF1FD554,  FIO_FindClose)                           // AJ__switch_0x1A50_n_calls_fstOpenDir
-NSTUB(0xFF1FD42C,  FIO_FindNextEx)
+NSTUB(0xFF1FC684,  _FIO_CloseFile)
+NSTUB(0xFF1FD554, _FIO_FindClose)                           // AJ__switch_0x1A50_n_calls_fstOpenDir
+NSTUB(0xFF1FD42C,  _FIO_FindNextEx)
 NSTUB(0xFF1FC434, _FIO_ReadFile)
-NSTUB(0xFF1FC4E4,  FIO_SeekSkipFile)
+NSTUB(0xFF1FC4E4,  _FIO_SeekSkipFile)
 NSTUB(0xFF1FC5D4, _FIO_WriteFile)
 NSTUB(0xFF1FCCF4, _FIO_CreateDirectory)                     // not sure. g3gg0: confirmed by caller 'ctgDirCreate'
 NSTUB(0xFF1FC2E0, _FIO_CreateFile)

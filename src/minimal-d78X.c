@@ -47,6 +47,9 @@ extern int _FIO_WriteFile( FILE* stream, const void* ptr, size_t count );
 #define FIO_RemoveFile _FIO_RemoveFile
 extern int _FIO_RemoveFile(const char * filename);
 
+#define FIO_CloseFile _FIO_CloseFile
+extern void _FIO_CloseFile( FILE* stream );
+
 extern int FIO_Flush(const char * filename);
 
 static void backup_region(char *file, uint32_t base, uint32_t length)

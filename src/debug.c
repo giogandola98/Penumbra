@@ -18,6 +18,7 @@
 #include "console.h"
 #include "zebra.h"
 #include "shoot.h"
+#include "powersave.h"
 #include "cropmarks.h"
 #include "fw-signature.h"
 #include "lvinfo.h"
@@ -641,6 +642,8 @@ debug_loop_task( void* unused ) // screenshot, draw_prop
 #endif
 
         #ifdef FEATURE_SCREENSHOT
+        /* the 10 s countdown must not freeze in Canon's idle sleep */
+        powersave_hold_set("screenshot", screenshot_sec);
         if (screenshot_sec)
         {
             info_led_blink(1, 20, 1000-20-200);
@@ -669,7 +672,23 @@ debug_loop_task( void* unused ) // screenshot, draw_prop
         crash_log_step();
         #endif
 
+        #ifdef CONFIG_PROFILE_PHOTO
+        /* Only the screenshot countdown, the hexdump view and the Canon menu
+         * (format dialog hijack) need 5 Hz. Crash/assert logs and Canon's
+         * error dialog are requested from contexts that cannot give a
+         * semaphore (assert handler, task dispatch hook), so keep polling
+         * for them, but 1 Hz is enough to catch them. */
+        int busy = screenshot_sec;
+        #ifdef CONFIG_HEXDUMP
+        busy = busy || hexdump_enabled;
+        #endif
+        #ifdef CONFIG_RESTORE_AFTER_FORMAT
+        busy = busy || MENU_MODE;
+        #endif
+        msleep(busy ? 200 : 1000);
+        #else
         msleep(200);
+        #endif
     }
 }
 

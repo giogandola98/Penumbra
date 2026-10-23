@@ -1,6 +1,7 @@
 #include "sd_pll.h"
 #include "module.h"
 #include "dryos.h"
+#include "powersave.h"
 
 // We don't know how to access SD UHS modes on Digic 4 cams,
 // but it is possible to change what we believe is the PLL clock
@@ -149,6 +150,13 @@ static void apply_selected_clock(void)
         return;
 
     set_SD_PLL_clock(SD_PLL_clock_choice);
+
+    /* Canon never rewrites the SD PLL (0xC04000BC) after boot, but whether the value survives
+     * the PLL handshake of the self-refresh sleep is unverified (docs/analysis/powersave-hold.md,
+     * "File I/O and deep sleep"). Until it is, an overclocked card keeps the camera out of that
+     * sleep; stock (the default) does not. Applied once at module load and never undone, so
+     * never released. */
+    powersave_hold("sd overclock");
 
     // SJE TODO do filesystem data roundtrip tests here
 }

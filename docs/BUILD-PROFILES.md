@@ -30,6 +30,12 @@ Always `make clean` when switching profile (the profile is a compiler flag, `-DC
   `src/fps-engio.c` (do not create the audio polling task, the empty Audio/Movie FPS menus, and fix a
   prototype that only compiled when FPS override was on).
 
+* `POWERSAVE_HOLD` (make variable, `platform/Makefile`): `y` adds `-DCONFIG_POWERSAVE_HOLD`, which replaces ML's
+  permanent boot-time `DisablePowerSave` with counted holds taken only while a feature needs timers
+  (`docs/analysis/powersave-hold.md`). The photo profile sets `POWERSAVE_HOLD ?= y`; `full` and other cameras keep
+  upstream behaviour unless built with `make POWERSAVE_HOLD=y` (e.g. the 1100D QEMU validation build).
+  `POWERSAVE_HOLD=n` opts the photo profile out. `make clean` when changing it.
+
 Modules are camera- and profile-independent; all of them are still compiled, the profile only chooses which are
 shipped in the zip.
 

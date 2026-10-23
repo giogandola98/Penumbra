@@ -288,6 +288,23 @@ return 0;\
 
 
 
+static int any_active_handler(struct script_event_entry * root)
+{
+    for (struct script_event_entry * e = root; e; e = e->next)
+        if (e->function_ref != LUA_NOREF)
+            return 1;
+    return 0;
+}
+
+/* Background scripts driven by the periodic events run from timers, with nobody touching the
+ * camera (e.g. a timelapse script). Keep Canon's timer-stopping idle sleep off while any script
+ * handles one. Key, property and pre/post-shoot events come with their own wakeup. */
+static void lua_update_powersave_hold()
+{
+    powersave_hold_set("lua events",
+        any_active_handler(shoot_task_cbr_scripts) || any_active_handler(seconds_clock_cbr_scripts));
+}
+
 static void update_event_cant_unload(struct script_event_entry ** root, lua_State * L)
 {
     //are there any event handlers for this script left?
@@ -338,6 +355,7 @@ static void set_event_script_entry(struct script_event_entry ** root, lua_State 
         }
     }
     update_event_cant_unload(root, L);
+    lua_update_powersave_hold();
 }
 
 static int luaCB_event_index(lua_State * L)
@@ -778,6 +796,8 @@ static void load_script(struct lua_script * script)
 
     /* disable powersave during the initial load, or while a simple script is running */
     powersave_prohibit();
+    /* scripts msleep and poll; keep the DryOS timers running while the script body runs */
+    powersave_hold("lua script");
 
     script->load_time = get_seconds_clock();
     script->state = SCRIPT_STATE_LOADING_OR_RUNNING;
@@ -871,6 +891,7 @@ static void load_script(struct lua_script * script)
     lua_print_free_mem();
 
     /* script finished or loaded in background; allow auto power off */
+    powersave_release("lua script");
     powersave_permit();
 }
 

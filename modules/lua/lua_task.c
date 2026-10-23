@@ -51,6 +51,9 @@ static void lua_run_task(struct lua_task_func * lua_task_func)
                     powersave_prohibit();
                 }
 
+                /* script tasks loop on msleep; keep the DryOS timers running meanwhile */
+                powersave_hold("lua task");
+
                 printf("[%s] task starting.\n", lua_get_script_filename(L));
 
                 if(docall(L, 0, 0))
@@ -61,6 +64,8 @@ static void lua_run_task(struct lua_task_func * lua_task_func)
                 luaL_unref(L, LUA_REGISTRYINDEX, lua_task_func->function_ref);
 
                 printf("[%s] task exiting.\n", lua_get_script_filename(L));
+
+                powersave_release("lua task");
 
                 if (lua_task_func->disable_psave)
                 {

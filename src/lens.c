@@ -1891,6 +1891,9 @@ void _lens_dynamic_data_post_update()
     update_stuff();
 }
 
+/* last time a consumer outside the core (Lua) read the dynamic lens data; see lens_info_poll_step */
+static int lens_info_demand_ms = 0;
+
 #if !defined(CONFIG_DIGIC_VIII) && !defined(CONFIG_DIGIC_X)
 // DIGIC8+ uses PROP_LENS_DYNAMIC_DATA
 /* only used for requesting a refresh of PROP_LV_LENS;
@@ -1925,7 +1928,7 @@ PROP_HANDLER( PROP_LV_LENS_D67 )
 }
 #endif
 
-/* called once per second */
+/* called from lens_info_poll_step, at most once per second */
 void _prop_lv_lens_request_update()
 {
 #if defined(CONFIG_DIGIC_VI) || defined(CONFIG_DIGIC_VII)
@@ -1946,7 +1949,51 @@ void _prop_lv_lens_request_update()
     prop_request_change(PROP_LV_LENS, &lv_lens_raw, 0);
 #endif
 }
+
+/* Outside LiveView, only these requests refresh focal_len / focus_dist / focus_pos (and the DOF
+ * values derived from them). Each one is an MPU round trip that makes Canon toggle its power-save
+ * counter, and every EnablePowerSave restarts the countdown to the deep (self-refresh) sleep, so a
+ * 1 Hz poll at idle keeps the camera out of it. Poll only while a consumer may show or use them. */
+static int lens_poll_wanted()
+{
+    if (lv || !lens_info.lens_exists)
+        return 0;   /* in LiveView Canon streams PROP_LV_LENS by itself */
+
+    if (gui_menu_shown())
+        return 1;   /* info bars (focal length), Focus -> DOF info */
+
+    #ifdef FEATURE_FLEXINFO
+    if (DISPLAY_IS_ON && display_idle() && get_global_draw())
+        return 1;   /* photo-mode info screen: focal length, focus distance, DOF items */
+    #endif
+
+    if (powersave_holders())
+        return 1;   /* an ML activity runs (script, intervalometer, menu action...); Canon is held anyway */
+
+    return lens_info_demand_ms && get_ms_clock() - lens_info_demand_ms < 10000;
+}
+
+void lens_info_poll_step()
+{
+    static int last_ms = 0;
+    static int was_wanted = 0;
+    int wanted = lens_poll_wanted();
+    int now = get_ms_clock();
+
+    /* first request as soon as a consumer appears (e.g. menu opened), then once a second */
+    if (wanted && (!was_wanted || now - last_ms >= 1000))
+    {
+        _prop_lv_lens_request_update();
+        last_ms = now;
+    }
+    was_wanted = wanted;
+}
 #endif
+
+void lens_info_want_fresh()
+{
+    lens_info_demand_ms = get_ms_clock() | 1;   /* never 0: 0 means "no demand yet" */
+}
 
 #if defined(CONFIG_DIGIC_8X)
 PROP_HANDLER( PROP_LENS_DYNAMIC_DATA )

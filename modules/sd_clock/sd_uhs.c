@@ -7,6 +7,7 @@
 #include <patch.h>
 #include <console.h>
 #include <config.h>
+#include <powersave.h>
 
 #include "sd_pll.h"
 #include "sd_dryos_autotune.h"
@@ -872,6 +873,17 @@ static unsigned int sd_uhs_init()
             sd_overclock_task();
             turned_on = 1;
         }
+    }
+
+    if (turned_on)
+    {
+        /* Not known whether the UHS timing registers (0xC04006xx) survive Canon's self-refresh
+         * sleep on DIGIC 5: it gates every clock and no Canon SD re-init follows the wake, so a
+         * reset there would leave the card on stock or reset timing (EOSM not reverse engineered
+         * yet; docs/analysis/powersave-hold.md, "File I/O and deep sleep"). Until it is, an
+         * overclocked card keeps the camera out of that sleep. Only users who enabled the
+         * overclock pay for it (default OFF). */
+        powersave_hold("sd overclock");
     }
 
     return 0;
