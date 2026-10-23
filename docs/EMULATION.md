@@ -34,8 +34,13 @@ The 1100D (DIGIC 4) is the user's second body and validates the whole chain befo
 
 Timeline per scenario (host time): boot `WARMUP_S` (40 s, not measured) → screenshot `boot.png` →
 measure `MEASURE_S` (30 s) → screenshot `idle.png` → `quit`.
+For ML scenarios, after the window, the Trash key (`sendkey delete`) opens the ML menu → `menu.png`.
 Outputs per scenario in `emu-out/<CAM>/<scenario>/`: `wakeups.json`, `tasks.json`, `result.json`, `qemu.log`
 (DryosDebugMsg + task switches), screenshots; `emu-out/<CAM>/comparison.md` holds the table.
+
+QEMU side vs ML side: `ci/qemu/Containerfile`, `ci/qemu/plugins/`, `ci/qemu/build-plugin.sh` and
+`ci/qemu/selftest/` (except `test_sd_image.sh`) only depend on QEMU and can move to the QEMU-EOS-Optimized repo;
+the rest uses this tree (platform dirs, stubs, `sd.qcow2.xz`, ML builds, ROM checksums).
 
 ## Metrics and their limits
 
@@ -58,6 +63,32 @@ same window), never absolute battery estimates. Without `-icount`, guest time fo
 loaded runner can shift rates a little; run twice before trusting a small delta. Peripherals are partial:
 no LiveView sensor, partial MPU/display emulation, so LiveView-driven tasks may behave differently than on
 hardware. Hardware (phase 8) is the final check.
+
+`scenario.py` also samples the guest PC through the monitor (`info registers`, every 0.5 s) during the window;
+the comparison lists the hottest PCs. This ROM-independent profile shows where an idle CPU really spends its time.
+
+## Findings so far (1100D.105, CI run 20)
+
+| scenario | WFI/s | IRQ/s | task sw/s | busy ratio | hottest PC |
+|---|---:|---:|---:|---:|---|
+| canon | 0 | 103.8 | 68 | 1.00 | 0xFF1EA818 (98%) |
+| ml-full | 107.8 | 111.5 | 357 | 0.02 | 0xFF1EA9B4 (98%, right after the WFI) |
+
+What works: Canon boot to the shooting screen (Q screen screenshot), ML 1100D.105 boot (overlay, "Magic Lantern"
+first-run screen via the Trash key), DryosDebugMsg logging, task-switch logging, the plugin, ROM fetch + checks.
+
+What does not (qemu-eos limitations, not ML bugs):
+- **Canon idle does not sleep in emulation.** The DIGIC 4 idle loop (around 0xFF1EA7E0) only executes its WFI
+  (`mcr p15,0,r0,c15,c8,2` at 0xFF1EA9B0) when power save is *disabled*. With power save enabled (Canon alone:
+  `[PM] EnablePowerSave (Counter = 0)`) it polls power-management hardware that qemu-eos does not emulate, so the
+  CPU spins at 0xFF1EA818. ML keeps power save disabled (counter 2-3), so the idle loop takes the WFI path.
+  Consequence: for the 1100D, **WFI/s and busy ratio are not comparable between `canon` and ML**. IRQ/s and task
+  switches/s are (ML adds ~290 switches/s, `audio_common_task` alone ~100/s, matching `analysis/power-audit.md`).
+  Comparisons between ML builds (full vs photo) are valid on every metric, since both take the same idle path.
+- **ROM0 is not mapped** for the 1100D in qemu-eos: ML's first-boot ROM backup reads 0xF0000000 and QEMU aborts
+  (`io_readx: Assertion`). `run_cam.sh` seeds zero-filled `ML/LOGS/ROM0.BIN`/`ROM1.BIN` of the right size so
+  ML skips the backup (which would also distort the window).
+- No LiveView (the 1100D needs a key press to enter it; the sensor path is not emulated anyway).
 
 ## Running
 
