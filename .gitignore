@@ -9,6 +9,7 @@ syntax: glob
 .*
 !.hgignore
 !.gitignore
+!.forgejo
 .*.swp
 a.out
 *.exe
@@ -85,3 +86,9 @@ syntax: regexp
 ROM*.BIN
 SFDATA.BIN
 /roms/
+build-report.txt
+cppcheck-report.txt
+
+# emulation outputs (ci/qemu)
+/emu-out/
+/emu-zips/

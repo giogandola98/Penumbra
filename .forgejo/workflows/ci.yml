@@ -1,0 +1,114 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    # Label maps to the host executor of runner linux-podman-105 (no container: support there),
+    # which has podman. So the job builds ci/Containerfile and runs every step inside it.
+    runs-on: linux-podman
+    env:
+      IMAGE: ml-ci
+      # Shared runner executes jobs as root on the host: confine every build step (no network,
+      # no capabilities, no privilege escalation, bounded processes).
+      SANDBOX: --rm --network=none --security-opt label=disable --cap-drop=all --security-opt no-new-privileges --pids-limit=512
+    steps:
+      - name: Checkout
+        run: |
+          rm -rf src-checkout && mkdir src-checkout && cd src-checkout
+          git init -q .
+          git -c "http.extraheader=Authorization: Bearer ${{ github.token }}" \
+              fetch -q --depth=1 "${{ github.server_url }}/${{ github.repository }}.git" "${{ github.sha }}"
+          git checkout -q FETCH_HEAD
+
+      - name: Build CI image
+        run: |
+          # Content-addressed tag: unchanged Containerfile => podman reuses cached layers/image.
+          tag=$(sha256sum src-checkout/ci/Containerfile | cut -c1-12)
+          echo "$tag" > .image-tag
+          podman image exists "$IMAGE:$tag" || podman build --network=host -q -t "$IMAGE:$tag" -f src-checkout/ci/Containerfile src-checkout/ci
+
+      - name: Build EOSM.202 (FATAL_WARNINGS=y)
+        run: |
+          podman run $SANDBOX -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/build.sh
+
+      - name: Host tests
+        run: |
+          podman run $SANDBOX -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/host-tests.sh
+
+      - name: cppcheck (report only)
+        continue-on-error: true
+        run: |
+          podman run $SANDBOX -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/cppcheck.sh
+
+      - name: Collect artifacts
+        if: always()
+        run: |
+          mkdir -p artifacts
+          cp -f src-checkout/platform/EOSM.202/build/magiclantern.zip src-checkout/build-report.txt src-checkout/cppcheck-report.txt artifacts/ || true
+          ls -l artifacts
+
+      - name: Upload artifacts
+        if: always()
+        run: |
+          # The host executor has no node, so JS actions (upload-artifact) cannot run; speak the v3 protocol directly.
+          src-checkout/ci/upload-artifact.sh ml-optimized-eosm202 artifacts
+
+  emulation:
+    # Separate job so the slow QEMU image build never delays the firmware build.
+    # Plugin self-test always runs; camera scenarios (1100D, EOSM) only when ROMs are provisioned (docs/EMULATION.md).
+    runs-on: linux-podman
+    env:
+      IMAGE: ml-qemu
+      SANDBOX: --rm --network=none --security-opt label=disable --cap-drop=all --security-opt no-new-privileges --pids-limit=512
+    steps:
+      - name: Checkout
+        run: |
+          rm -rf src-checkout && mkdir src-checkout && cd src-checkout
+          git init -q .
+          git -c "http.extraheader=Authorization: Bearer ${{ github.token }}" \
+              fetch -q --depth=1 "${{ github.server_url }}/${{ github.repository }}.git" "${{ github.sha }}"
+          git checkout -q FETCH_HEAD
+
+      - name: Build QEMU image
+        run: |
+          # Content-addressed tag, as for ml-ci: QEMU is rebuilt only when ci/qemu/Containerfile changes.
+          # --network=host only here: the build needs the network and pasta networking fails on this runner.
+          tag=$(sha256sum src-checkout/ci/qemu/Containerfile | cut -c1-12)
+          echo "$tag" > .qemu-image-tag
+          start=$(date +%s)
+          podman image exists "$IMAGE:$tag" || podman build --network=host -t "$IMAGE:$tag" -f src-checkout/ci/qemu/Containerfile src-checkout/ci/qemu 2>&1 | tail -n 60
+          podman image exists "$IMAGE:$tag"
+          echo "image $IMAGE:$tag ready in $(( $(date +%s) - start ))s"
+
+      - name: Wakeup plugin self-test (no ROM needed)
+        run: |
+          start=$(date +%s)
+          podman run $SANDBOX --tmpfs /tmp -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .qemu-image-tag)" \
+              ci/qemu/selftest/selftest.sh emu-out/selftest
+          echo "self-test done in $(( $(date +%s) - start ))s"
+
+      - name: Camera scenarios (SKIPPED without ROMs)
+        env:
+          # Personal access token with only read:package (docs/EMULATION.md). Absent => job token, then SKIPPED.
+          ROM_TOKEN: ${{ secrets.ROM_TOKEN }}
+          JOB_TOKEN: ${{ github.token }}
+        run: |
+          start=$(date +%s)
+          # ci-emulation.sh builds ML (ml-ci image) only for cameras whose ROMs were fetched.
+          export CI_IMAGE="ml-ci:$(sha256sum src-checkout/ci/Containerfile | cut -c1-12)"
+          export QEMU_IMAGE="$IMAGE:$(cat .qemu-image-tag)" CI_CONTAINERFILE=src-checkout/ci/Containerfile
+          src-checkout/ci/qemu/ci-emulation.sh
+          echo "scenarios done in $(( $(date +%s) - start ))s"
+
+      - name: Upload emulation results
+        if: always()
+        run: |
+          # Results only: JSON, logs, tables, screenshots. ci-emulation.sh already removed anything ROM-like.
+          rm -rf emu-artifacts && mkdir -p emu-artifacts
+          if [ -d src-checkout/emu-out ]; then cp -r src-checkout/emu-out/. emu-artifacts/; fi
+          find emu-artifacts -type f \( -iname '*.bin' -o -iname '*.img' -o -iname '*.o' -o -iname '*.elf' -o -iname '*.so' \) -delete
+          find emu-artifacts -type f | sort
+          cat emu-artifacts/*/comparison.md 2>/dev/null || true
+          src-checkout/ci/upload-artifact.sh ml-optimized-emulation emu-artifacts

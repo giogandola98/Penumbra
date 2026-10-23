@@ -368,6 +368,7 @@ ML_SRC_OBJS_00 = \
     tskmon.o \
     battery.o \
     imgconv.o \
+    overlay_kernels.o \
     histogram.o \
     falsecolor.o \
     beep.o \
