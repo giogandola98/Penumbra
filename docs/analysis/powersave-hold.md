@@ -1,7 +1,7 @@
 # Counted powersave holds instead of ML's permanent `DisablePowerSave`
 
-Status: implemented, builds and host tests green. **Not yet run in QEMU with the PM registers modelled, nor on
-hardware.** Spec: `docs/firmware/1100D-powersave.md` (RE of 1100D 1.0.5). Branch `power/powersave-hold`.
+Status: implemented, builds and host tests green; **verified in QEMU with the deep sleep modelled** (1100D, see
+*QEMU results: deep sleep*). Not yet run on hardware. Spec: `docs/firmware/1100D-powersave.md` (RE of 1100D 1.0.5). Branch `power/powersave-hold`.
 
 ## Problem
 
@@ -216,6 +216,51 @@ Until then the PowerMgr mode-2 loop spins at 0xFF1EA818 in emulation (`docs/EMUL
 Hardware (only when the user says so): battery current/runtime at idle with LCD on and off, stock vs `full` vs
 photo; intervalometer and bulb timer accuracy with the display off; APO still fires at the configured time.
 
+### QEMU results: deep sleep (branch `power/deep-sleep-verify`, Forgejo CI run 53, 1100D.105)
+
+**Emulator** (QEMU-EOS-Optimized branch `emu/deep-sleep`, image pinned in `ci/qemu-image.txt`): Canon's
+`selfRefresh` writes CLOCK_ENABLE = 0; from then until Canon restores it the DIGIC timers, the DryOS tick and the
+HPTimers stand still and only a key/MPU interrupt ends the sleep (the wake flag 0xC0201308 bit 4 follows the pending
+interrupt, the poll loop is halted time). The emulator logs each sleep (`[PM1100D] self-refresh #n in` / `out after
+X s, wake irq 0xNN`). Reaching it also needed an emulation fix: the JPEG core never reported ready after its reset,
+so Canon's JpCore init failed at boot and kept its image-engine clock client (ClockSaver slot 3) forever; LCLK
+(0xC0400008 bit 1) then stayed on with the display off and PowerMgr never went past the low-clock WFI. With the JPEG
+core ready, the display-off path releases the last client and LCLK goes off, as the RE predicts.
+
+**Scenario** (`ci/qemu/scenario.py --display-off-s 30`, `run_cam.sh` default on the 1100D): after the 30 s idle
+window, `sendkey i` (INFO/DISP: on the 1100D shooting screen Canon's `PRESS_INFO_BUTTON` → `GUILock_TurnOffDisplay`
+→ `TurnOffDisplay`; Canon's own LCD auto-off is not used, it would need the APO timing) turns the display off for
+30 s, then `sendkey i` again wakes the camera. ML builds then open the ML menu (Trash), dismiss the beta warning,
+select an entry (SET) and close the menu, which makes ML write its config. Checks (CI fails on any): sleep entered or
+not as expected, the wake key changes the screen, the ML menu opens, `ML/SETTINGS/MAGIC.CFG` on the card after the
+run has ML's header, only `name = integer` lines and the `beta.warn` written in this run, and the `fio` holds of
+the writes after the wake pair up. `ml-hold-ivl` is `ml-hold` with a config preset that auto-starts the
+intervalometer at boot (first shot after 15 min, so no picture is taken): an active hold.
+
+| scenario | `pmSelfRefresh` In / Out | in self-refresh (of 30 s) | wake irq | IRQ/s | task sw/s | Canon counter (59 samples) | ML holds | wake: screen / ML menu / config saved, fio holds |
+|---|---:|---:|---|---:|---:|---|---|---|
+| canon | 1 / 1 | 29.0 s | 0x50 (MPU) | 5.3 | 1.8 | 0 | – | yes / – / – |
+| ml-full | 0 / 0 | 0 | – | 107.4 | 290.6 | 1 (pinned) | 0 | yes / yes / yes, 9/9 |
+| ml-hold | 1 / 1 | 29.1 s | 0x50 (MPU) | 5.5 | 12.3 | 0 | 0 | yes / yes / yes, 9/9 |
+| ml-hold-ivl | 0 / 0 | 0 | – | 111.1 | 293.2 | 1 | 1 (`intervalometer`) | yes / – / – |
+
+- (a) Canon alone enters `selfRefresh` ~1 s after the display goes off and sleeps until the key (the whole
+  segment: IRQ rate drops from ~105/s to the few interrupts around entry and wake, task switches to ~2/s).
+- (b) `ml-full` never does: Canon's counter is 1 in every sample, PowerMgr stays in the full-clock WFI.
+- (c) `ml-hold` behaves like Canon alone (same entry, same length, same wake interrupt) and wakes correctly: the
+  shooting screen returns, the ML menu opens, the config is written with 9 `fio` holds, all released, and ML's holds
+  are 0 again afterwards. The ML task switches in the segment (12/s) all happen before the entry; during the sleep
+  ML's tasks are frozen with the timers (expected, see *Deliberately not held*).
+- (d) `ml-hold-ivl` keeps the hold: Canon's counter stays 1, no `selfRefresh`, ML's tasks keep switching at the
+  same rate as `ml-full` (`shoot_task`, `clock_task`, `cls_task` all present).
+- The idle window itself (display on) is unchanged: all scenarios ~105 WFI/s, `ml-hold` and `ml-full` within noise.
+- **Not verified in emulation:** real time across the sleep (the emulator stops the timers but has no RTC drift
+  model, so ML clock lag after a wake is not measured), intervalometer shot timing (no shutter emulation; the preset
+  avoids shots), the LCD auto-off and APO paths, a sleep during an in-flight SD transfer (needs an SD model with
+  deferred completion), EOSM (no ROM in CI, and its PowerMgr is not reverse engineered). Whether slot 3 is really free
+  at idle on the camera (the JPEG core boots normally there) is the assumption behind the emulator fix; the
+  DryosDebugMsg log on hardware (`[CLKSAVER]` `LSEL_DISABLE` after display off, then `pmSelfRefresh : In`) confirms it.
+
 ## Follow-up: lens info poll outside LiveView (branch `power/lens-poll`)
 
 ### Cause
@@ -402,8 +447,8 @@ ROM1 literal pools; EOSM not covered):
   counter at 0 for the whole window (59/59 RAM samples) with no `[PM]` call, and the idle metrics (task switches,
   IRQ/s, PC profile) are within run-to-run noise of run 39. The menu is closed with MENU, since the first key press
   after a fresh boot only dismisses ML's beta warning.
-  **Pending:** a config save triggered from the menu (it needs a menu change to make the config dirty; the harness
-  only sends blind keys), and the SD scenarios that need the qemu SD model (deferred completion, clock gating, card
+  A config save after a deep sleep is now exercised too (*QEMU results: deep sleep*: fio holds pair, file intact).
+  **Pending:** the SD scenarios that need the qemu SD model (deferred completion, clock gating, card
   power) from the QEMU-EOS-Optimized repo: transfer frozen across a sleep without the hold, no `pmSelfRefresh`
   between the first and last FIO call with it, `fsck`/hash of the written files.
 
