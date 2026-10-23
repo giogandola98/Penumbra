@@ -51,16 +51,16 @@ NSTUB( 0x40CC, task_max)
 /** File I/O **/
 THUMB_FN(0xE05465E6, _FIO_CreateFile)
 THUMB_FN(0xE0546534, _FIO_OpenFile)
-THUMB_FN(0xE0546D56,  FIO_CloseFile)
+THUMB_FN(0xE0546D56,  _FIO_CloseFile)
 THUMB_FN(0xE05469B6, _FIO_ReadFile)
 THUMB_FN(0xE0546B42, _FIO_WriteFile)
-THUMB_FN(0xE0546A82,  FIO_SeekSkipFile)                     // guess: Search?!
+THUMB_FN(0xE0546A82, _FIO_SeekSkipFile)                     // guess: Search?!
 THUMB_FN(0xE054691C, _FIO_RemoveFile)
 THUMB_FN(0xE0547926, _FIO_RenameFile)
 THUMB_FN(0xE0547DB0, _FIO_CreateDirectory)
 THUMB_FN(0xE0548212, _FIO_FindFirstEx)                      // FirstEnt
-THUMB_FN(0xE0548318,  FIO_FindNextEx)                       // NextEnt
-THUMB_FN(0xE05483DA,  FIO_FindClose)                        // CloseEnt
+THUMB_FN(0xE0548318, _FIO_FindNextEx)                       // NextEnt
+THUMB_FN(0xE05483DA, _FIO_FindClose)                        // CloseEnt
 THUMB_FN(0xE0547F9A,  FIO_Flush)                            // to be called after FIO_CloseFile?
 THUMB_FN(0xE0546EF2, _FIO_GetFileSize64)                    // AcqSize; different in D8 cameras - returns 64 bit size in struct of lower/upper 32bit part.
 

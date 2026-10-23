@@ -6,6 +6,7 @@
 #include "shoot.h"
 #include "bmp.h"
 #include "lens.h"
+#include "arm-mcr.h"
 
 /* Canon's powersave timer */
 /* ======================= */
@@ -103,6 +104,18 @@ int powersave_hold(const char * who)
 int powersave_release(const char * who)
 {
     return ps_hold_op(who, PS_OP_DROP);
+}
+
+int powersave_hold_try(const char * who)
+{
+    /* For paths that may run before powersave_hold_init() or outside a plain task (FIO wrappers):
+     * the semaphore must not be taken from an interrupt (DryOS timer callbacks run there too) or
+     * with IRQs masked, where waiting for it could never end. Skipping is safe: such callers are
+     * short and the CPU is busy running them, so PowerMgr cannot idle under them anyway. */
+    if (!ps_hold_sem) return 0;
+    if (*(volatile uint32_t *)((uintptr_t)&current_interrupt - 4)) return 0;   /* see task_utils.c */
+    if (read_cpsr() & 0x80) return 0;
+    return ps_hold_op(who, PS_OP_TAKE) == 0;
 }
 
 void powersave_hold_set(const char * who, int on)

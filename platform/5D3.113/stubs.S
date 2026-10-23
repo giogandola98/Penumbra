@@ -41,11 +41,11 @@ NSTUB(0xFF0C520C,  init_task)
 NSTUB(   0x468B8,  additional_version)
 
 /** File I/O **/
-NSTUB(0xFF309D38,  FIO_CloseFile)
-NSTUB(0xFF30AD30,  FIO_FindClose)                           // proper name: FindClose
-NSTUB(0xFF30AC50,  FIO_FindNextEx)
+NSTUB(0xFF309D38,  _FIO_CloseFile)
+NSTUB(0xFF30AD30, _FIO_FindClose)                           // proper name: FindClose
+NSTUB(0xFF30AC50,  _FIO_FindNextEx)
 NSTUB(0xFF309AE8, _FIO_ReadFile)
-NSTUB(0xFF309B98,  FIO_SeekSkipFile)
+NSTUB(0xFF309B98,  _FIO_SeekSkipFile)
 NSTUB(0xFF309C88, _FIO_WriteFile)
 NSTUB(0xFF30A594, _FIO_CreateDirectory)
 NSTUB(0xFF309994, _FIO_CreateFile)

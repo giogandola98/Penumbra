@@ -20,6 +20,11 @@ void powersave_permit();
 int powersave_hold(const char * who);       /* 0 on success, -1 if refused */
 int powersave_release(const char * who);    /* 0 on success, -1 if `who` held nothing */
 
+/* For hot paths that may also run before ML init, from an interrupt or with IRQs masked (the FIO
+ * wrappers): takes the hold only where powersave_hold() is allowed. Returns 1 if it took one; the
+ * caller releases only then (`if (held) powersave_release(who);`). */
+int powersave_hold_try(const char * who);
+
 /* level-triggered: `who` holds exactly once while `on`, none otherwise; cheap to poll */
 void powersave_hold_set(const char * who, int on);
 
