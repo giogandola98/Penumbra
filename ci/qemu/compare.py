@@ -3,6 +3,8 @@
 
 Usage: compare.py CAM OUT_DIR SCENARIO...
 Deltas are relative to the first scenario (the Canon-only baseline).
+With display-off results (scenario.py --display-off-s) it also prints the deep-sleep table and checks
+the expectations of docs/analysis/powersave-hold.md; DEEP_SLEEP_ASSERT=1 turns a failed check into exit 1.
 """
 import json
 import os
@@ -19,6 +21,72 @@ def load(out, sc):
 
 def fmt(v, nd=1):
     return "n/a" if v is None else ("%.*f" % (nd, v))
+
+
+def settings_saved(out, sc):
+    """ML wrote its config during the run (ML/SETTINGS/MAGIC.CFG with ML's own header, run_cam.sh)."""
+    try:
+        with open(os.path.join(out, sc, "sd_settings.txt"), errors="replace") as f:
+            return "# Configuration saved on" in f.read()
+    except OSError:
+        return None
+
+
+# Expected deep-sleep behaviour per scenario: does Canon enter selfRefresh with the display off?
+EXPECT_SLEEP = {"canon": True, "ml-full": False, "ml-photo": None, "ml-hold": True, "ml-hold-ivl": False}
+
+
+def deep_sleep(out, rows):
+    """Table + checks for the display-off segment. Returns the list of failed checks."""
+    rows = [(sc, r) for sc, r in rows if r and r.get("display_off")]
+    if not rows:
+        return []
+    print("\n## Deep sleep: display off (%s key) for %.0f s after the window, then the same key\n" % (
+        rows[0][1]["display_off"]["key"], rows[0][1]["display_off"]["seconds"]))
+    print("| scenario | pmSelfRefresh In/Out | sleeps (emulator) | in self-refresh s | longest s | halted s "
+          "| busy | WFI/s | IRQ/s | task sw/s | Canon counter (samples) | ML holds | woken: screen changed "
+          "| ML menu opened | config saved |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|---|---|")
+    fails = []
+    for sc, r in rows:
+        d = r["display_off"]
+        p = d.get("plugin") or {}
+        ctr = d.get("pm_counter_samples") or {}
+        saved = settings_saved(out, sc) if r.get("boot_ml") else None
+        print("| %s | %d/%d | %d%s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
+            sc, d["self_refresh_in"], d["self_refresh_out"], d["qemu_self_refresh"],
+            " (+1 at end)" if d.get("self_refresh_in_progress") else "",
+            fmt(d["qemu_self_refresh_s"], 1), fmt(d["qemu_self_refresh_max_s"], 1), fmt(p.get("halted_s"), 1),
+            fmt(p.get("busy_ratio"), 3), fmt(p.get("wakeups_per_s")), fmt(p.get("irq_per_s")),
+            fmt(d.get("task_switches_per_s")), ", ".join("%s=%d" % kv for kv in sorted(ctr.items())) or "n/a",
+            "; ".join(l.split("[PS] ", 1)[-1] for l in d.get("ps_log", [])) or "-",
+            "yes" if d.get("screen_changed_on_wake") else "NO",
+            ("yes" if d.get("menu_opened_after_wake") else "NO") if r.get("menu_png") else "-",
+            {True: "yes", False: "NO", None: "-"}[saved]))
+        want = EXPECT_SLEEP.get(sc)
+        slept = d["self_refresh_in"] > 0
+        checks = []
+        if want is not None:
+            checks.append(("deep sleep %s" % ("entered" if want else "never entered"), slept == want))
+        if want is False and ctr:
+            checks.append(("Canon counter >= 1 in every sample", all(int(v) >= 1 for v in ctr)))
+        if want:
+            checks.append(("emulator saw the clocks gated", d["qemu_self_refresh"] + d.get("self_refresh_in_progress", 0) > 0))
+        checks.append(("screen changes after the wake key", bool(d.get("screen_changed_on_wake"))))
+        if r.get("menu_png"):
+            checks.append(("ML menu opens after the wake", bool(d.get("menu_opened_after_wake"))))
+        if r.get("menu_closed_png"):
+            checks.append(("ML config saved after the wake", bool(saved)))
+        if sc == "ml-hold-ivl":
+            checks.append(("intervalometer hold taken", any("intervalometer" in l for l in r.get("ps_log", []))))
+            tasks = dict(d.get("top_tasks") or [])
+            checks.append(("ML tasks keep switching with the display off",
+                           (d.get("task_switches_per_s") or 0) >= 10 and tasks.get("shoot_task", 0) > 0))
+        for name, ok in checks:
+            print("%s %s: %s" % ("PASS" if ok else "FAIL", sc, name))
+            if not ok:
+                fails.append("%s: %s" % (sc, name))
+    return fails
 
 
 def main():
@@ -68,8 +136,12 @@ def main():
                 print("    context of DisablePowerSave #%d in the window:" % (n + 1))
                 for l in block:
                     print("      %s" % l)
+    fails = deep_sleep(out, rows)
     print("\nwakeups/s = WFI (idle entries) per second; busy ratio = 1 - halted/elapsed host time "
           "(TCG over-estimates it). See docs/EMULATION.md.")
+    if fails and os.environ.get("DEEP_SLEEP_ASSERT") == "1":
+        print("deep-sleep checks failed: %s" % "; ".join(fails), file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
