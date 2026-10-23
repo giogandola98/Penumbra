@@ -56,11 +56,11 @@ jobs:
           src-checkout/ci/upload-artifact.sh ml-optimized-eosm202 artifacts
 
   emulation:
-    # Separate job so the slow QEMU image build never delays the firmware build.
-    # Plugin self-test always runs; camera scenarios (1100D, EOSM) only when ROMs are provisioned (docs/EMULATION.md).
+    # Separate job so emulation never delays the firmware build. QEMU itself (qemu-eos + wakeups plugin)
+    # is built, self-tested and published by the QEMU-EOS-Optimized repo; this job pulls the image pinned
+    # in ci/qemu-image.txt. Camera scenarios (1100D, EOSM) run only when ROMs are provisioned (docs/EMULATION.md).
     runs-on: linux-podman
     env:
-      IMAGE: ml-qemu
       SANDBOX: --rm --network=none --security-opt label=disable --cap-drop=all --security-opt no-new-privileges --pids-limit=512
     steps:
       - name: Checkout
@@ -71,23 +71,21 @@ jobs:
               fetch -q --depth=1 "${{ github.server_url }}/${{ github.repository }}.git" "${{ github.sha }}"
           git checkout -q FETCH_HEAD
 
-      - name: Build QEMU image
+      - name: Pull QEMU image (ci/qemu-image.txt)
+        env:
+          # Personal access token with only read:package (docs/EMULATION.md); also reads the ROM package.
+          ROM_TOKEN: ${{ secrets.ROM_TOKEN }}
+          # Registry = this CI server; owner = the private org that also owns the ROM packages.
+          ROM_PKG_OWNER: ${{ vars.ROM_PKG_OWNER }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
         run: |
-          # Content-addressed tag, as for ml-ci: QEMU is rebuilt only when ci/qemu/Containerfile changes.
-          # --network=host only here: the build needs the network and pasta networking fails on this runner.
-          tag=$(sha256sum src-checkout/ci/qemu/Containerfile | cut -c1-12)
-          echo "$tag" > .qemu-image-tag
-          start=$(date +%s)
-          podman image exists "$IMAGE:$tag" || podman build --network=host -t "$IMAGE:$tag" -f src-checkout/ci/qemu/Containerfile src-checkout/ci/qemu 2>&1 | tail -n 60
-          podman image exists "$IMAGE:$tag"
-          echo "image $IMAGE:$tag ready in $(( $(date +%s) - start ))s"
+          src-checkout/ci/qemu/pull-image.sh > .qemu-image
+          podman run $SANDBOX "$(cat .qemu-image)" sh -c 'echo "qemu-eos $(cat /opt/qemu-eos/QEMU_EOS_SHA) ($(cat /opt/qemu-eos/BUILD_PROFILE) build)"'
 
-      - name: Wakeup plugin self-test (no ROM needed)
+      - name: SD image tooling test (no ROM needed)
         run: |
-          start=$(date +%s)
-          podman run $SANDBOX --tmpfs /tmp -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .qemu-image-tag)" \
-              ci/qemu/selftest/selftest.sh emu-out/selftest
-          echo "self-test done in $(( $(date +%s) - start ))s"
+          podman run $SANDBOX --tmpfs /tmp -v "$PWD/src-checkout:/work" -w /work "$(cat .qemu-image)" \
+              ci/qemu/test_sd_image.sh emu-out/sd-tooling
 
       - name: Camera scenarios (SKIPPED without ROMs)
         env:
@@ -100,7 +98,7 @@ jobs:
           start=$(date +%s)
           # ci-emulation.sh builds ML (ml-ci image) only for cameras whose ROMs were fetched.
           export CI_IMAGE="ml-ci:$(sha256sum src-checkout/ci/Containerfile | cut -c1-12)"
-          export QEMU_IMAGE="$IMAGE:$(cat .qemu-image-tag)" CI_CONTAINERFILE=src-checkout/ci/Containerfile
+          export QEMU_IMAGE="$(cat .qemu-image)" CI_CONTAINERFILE=src-checkout/ci/Containerfile
           src-checkout/ci/qemu/ci-emulation.sh
           echo "scenarios done in $(( $(date +%s) - start ))s"
 

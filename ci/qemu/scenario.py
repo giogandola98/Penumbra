@@ -30,8 +30,8 @@ def monitor_cmd(path, cmd, timeout=10.0):
     try:
         buf += s.recv(4096)                       # banner + prompt
         s.sendall(cmd.encode() + b"\n")
-        deadline = time.time() + timeout
-        while time.time() < deadline and buf.count(b"(qemu)") < 2:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline and buf.count(b"(qemu)") < 2:
             chunk = s.recv(4096)
             if not chunk:
                 break
@@ -125,32 +125,40 @@ def main():
 
     env = dict(os.environ, QEMU_EOS_WORKDIR=a.rom_dir)
     print("QEMU_EOS_WORKDIR=%s %s" % (a.rom_dir, " ".join(cmd)), flush=True)
-    t0 = time.time()
+    t0 = time.monotonic()
     with open(log, "wb") as logf:
         q = subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL, stdout=logf, stderr=subprocess.STDOUT)
     result = {"cam": a.cam, "boot_ml": a.boot, "warmup_s": a.warmup, "measure_s": a.measure}
     log_start = log_end = 0
+    t_quit = None
     try:
-        for _ in range(100):
+        for _ in range(600):
             if os.path.exists(mon) or q.poll() is not None:
                 break
             time.sleep(0.1)
         if q.poll() is not None:
             raise RuntimeError("QEMU exited early with code %s (see qemu.log)" % q.returncode)
+        if not os.path.exists(mon):
+            raise RuntimeError("QEMU monitor did not appear in 60 s")
+        # The timeline starts when QEMU is up, not at Popen: QEMU loads its plugins (whose window is
+        # timed from their load) just before it creates the monitor socket, and a cold start of the
+        # binary on a busy runner took ~10 s, which used to cut the measurement window by as much.
+        result["qemu_start_s"] = round(time.monotonic() - t0, 2)
+        t0 = time.monotonic()
 
-        time.sleep(max(0, a.warmup - (time.time() - t0)))
+        time.sleep(max(0, a.warmup - (time.monotonic() - t0)))
         log_start = os.path.getsize(log)
         result["boot_png"] = screenshot(mon, os.path.join(a.out, "boot.png"))
         # Sample the guest PC through the monitor during the window: a ROM-independent profile that
         # shows where the CPU spends its time (e.g. an idle loop that spins instead of sleeping).
         pcs = {}
         end = t0 + a.warmup + a.measure
-        while time.time() < end - 0.5:
+        while time.monotonic() < end - 0.5:
             m = re.search(r"R15=([0-9a-f]{8})", monitor_cmd(mon, "info registers", timeout=2))
             if m:
                 pcs[m.group(1)] = pcs.get(m.group(1), 0) + 1
-            time.sleep(min(0.5, max(0, end - time.time())))
-        time.sleep(max(0, end - time.time()))
+            time.sleep(min(0.5, max(0, end - time.monotonic())))
+        time.sleep(max(0, end - time.monotonic()))
         n = sum(pcs.values())
         result["pc_samples"] = n
         result["top_pcs"] = [("0x" + pc, round(c / n, 3)) for pc, c in
@@ -165,6 +173,7 @@ def main():
             result["menu_png"] = screenshot(mon, os.path.join(a.out, "menu.png"))
         if q.poll() is not None:
             raise RuntimeError("QEMU died during the run, code %s (see qemu.log)" % q.returncode)
+        t_quit = time.monotonic() - t0
         monitor_cmd(mon, "quit")
         q.wait(timeout=30)
     except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
@@ -187,6 +196,10 @@ def main():
             if rec.get("type") == "summary":
                 summary = rec
     result["wakeups"] = summary
+    # The plugin times its window from its own load (CLOCK_MONOTONIC, like this script). If the two
+    # clocks disagree by more than QEMU's start-up, the window was not where we meant it.
+    if summary and summary.get("t_end_ms") and t_quit is not None:
+        result["plugin_clock_lag_s"] = round(t_quit - summary["t_end_ms"] / 1000.0, 2)
     if a.tasks:
         tasks = count_task_switches(log, log_start, log_end)
         with open(os.path.join(a.out, "tasks.json"), "w") as f:
