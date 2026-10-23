@@ -51,23 +51,26 @@ def deep_sleep(out, rows):
         return []
     print("\n## Deep sleep: display off (%s key) for %.0f s after the window, then the same key\n" % (
         rows[0][1]["display_off"]["key"], rows[0][1]["display_off"]["seconds"]))
-    print("| scenario | pmSelfRefresh In/Out | sleeps (emulator) | in self-refresh s | longest s | halted s "
-          "| busy | WFI/s | IRQ/s | task sw/s | Canon counter (samples) | ML holds | woken: screen changed "
-          "| ML menu opened | config saved |")
-    print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|---|---|")
+    print("| scenario | pmSelfRefresh In (display off) / Out (after key) | sleeps (emulator) | in self-refresh s "
+          "| wake irq | halted s | busy | WFI/s | IRQ/s | task sw/s | Canon counter (samples) | ML holds "
+          "| woken: screen changed | ML menu opened | config saved |")
+    print("|---|---:|---:|---:|---|---:|---:|---:|---:|---:|---|---|---|---|---|")
     fails = []
     for sc, r in rows:
         d = r["display_off"]
         p = d.get("plugin") or {}
         ctr = d.get("pm_counter_samples") or {}
         saved = settings_saved(out, sc) if r.get("boot_ml") else None
+        holds = "%s%s" % (r.get("ml_holds_window_end", "-"), (" (%s)" % "; ".join(
+            l.split("[PS] ", 1)[-1] for l in r.get("ps_log", []) if "hold" in l and "boot" not in l))
+            if sc == "ml-hold-ivl" else "")
         print("| %s | %d/%d | %d%s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
-            sc, d["self_refresh_in"], d["self_refresh_out"], d["qemu_self_refresh"],
+            sc, d["self_refresh_in"], (d.get("wake") or {}).get("self_refresh_out", 0), d["qemu_self_refresh"],
             " (+1 at end)" if d.get("self_refresh_in_progress") else "",
-            fmt(d["qemu_self_refresh_s"], 1), fmt(d["qemu_self_refresh_max_s"], 1), fmt(p.get("halted_s"), 1),
+            fmt(d["qemu_self_refresh_s"], 1), ",".join(d.get("wake_irqs") or []) or "-", fmt(p.get("halted_s"), 1),
             fmt(p.get("busy_ratio"), 3), fmt(p.get("wakeups_per_s")), fmt(p.get("irq_per_s")),
             fmt(d.get("task_switches_per_s")), ", ".join("%s=%d" % kv for kv in sorted(ctr.items())) or "n/a",
-            "; ".join(l.split("[PS] ", 1)[-1] for l in d.get("ps_log", [])) or "-",
+            holds if r.get("boot_ml") else "-",
             "yes" if d.get("screen_changed_on_wake") else "NO",
             ("yes" if d.get("menu_opened_after_wake") else "NO") if r.get("menu_png") else "-",
             {True: "yes", False: "NO", None: "-"}[saved]))
@@ -79,7 +82,8 @@ def deep_sleep(out, rows):
         if want is False and ctr:
             checks.append(("Canon counter >= 1 in every sample", all(int(v) >= 1 for v in ctr)))
         if want:
-            checks.append(("emulator saw the clocks gated", d["qemu_self_refresh"] + d.get("self_refresh_in_progress", 0) > 0))
+            checks.append(("emulator: clocks gated, then woken by the key",
+                           d["qemu_self_refresh"] > 0 and (d.get("wake") or {}).get("self_refresh_out", 0) > 0))
         checks.append(("screen changes after the wake key", bool(d.get("screen_changed_on_wake"))))
         if r.get("menu_png"):
             checks.append(("ML menu opens after the wake", bool(d.get("menu_opened_after_wake"))))
@@ -91,7 +95,7 @@ def deep_sleep(out, rows):
                 fw.get("holds", 0) > 0 and fw.get("holds") == fw.get("releases")))
         if sc == "ml-hold-ivl":
             checks.append(("intervalometer hold taken", any("intervalometer" in l for l in r.get("ps_log", []))))
-            tasks = dict(d.get("top_tasks") or [])
+            tasks = d.get("tasks") or {}
             checks.append(("ML tasks keep switching with the display off",
                            (d.get("task_switches_per_s") or 0) >= 10 and tasks.get("shoot_task", 0) > 0))
         for name, ok in checks:

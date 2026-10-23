@@ -300,11 +300,12 @@ def main():
             result["menu_png"] = screenshot(mon, os.path.join(a.out, "menu.png"))
             # Close it again: ML's idle state must come back with no hold left (checked below).
             # On a fresh card the ML menu opens on its beta warning, which the first MENU only dismisses.
-            # --config-check: then SET changes the selected entry (config dirty) and MENU closes the
-            # menu, so ML autosaves its config: a file write after the deep sleep (checked on the card
-            # by run_cam.sh, fio holds checked below). Otherwise MENU twice: the second closes the menu
+            # --config-check: then SET selects the first entry of the tab ML opens on (Help: its help
+            # page; selecting an entry marks the config dirty), MENU leaves the help page and MENU closes
+            # the menu, so ML autosaves its config: a file write after the deep sleep (checked on the card
+            # by run_cam.sh, fio holds by compare.py). Otherwise MENU twice: the second closes the menu
             # (or, without the warning, opens Canon's menu, which ML does not hold). Trash would reopen it.
-            keys = ["m", "spc", "m"] if a.config_check else ["m", "m"]
+            keys = ["m", "spc", "m", "m"] if a.config_check else ["m", "m"]
             for k in keys:
                 monitor_cmd(mon, "sendkey " + k)
                 time.sleep(2)
@@ -410,6 +411,12 @@ def main():
         l0, l1, l2 = seg.pop("log")
         tasks = count_task_switches(log, l0, l1) if a.tasks else {}
         seg.update(pm_segment(read_log(log, l0, l1), seg["t1"] - seg["t0"], tasks))
+        seg["tasks"] = tasks
+        # A sleep ends after the wake key: its length is logged then, so count over both segments
+        whole = pm_segment(read_log(log, l0, l2), 1, {})
+        for k in ("qemu_self_refresh", "qemu_self_refresh_s", "qemu_self_refresh_max_s", "wake_irqs"):
+            seg[k] = whole[k]
+        seg["self_refresh_in_progress"] = whole["self_refresh_in_progress"]
         seg["plugin"] = plugin_window(intervals, seg["t0"] * 1000, seg["t1"] * 1000)
         wake = read_log(log, l1, l2)
         seg["wake"] = {"self_refresh_out": SR_RE.findall(wake).count("Out"),
