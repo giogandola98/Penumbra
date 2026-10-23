@@ -182,6 +182,9 @@ def main():
             time.sleep(max(3, a.menu_s))
             menu_end = os.path.getsize(log)
             result["menu_png"] = screenshot(mon, os.path.join(a.out, "menu.png"))
+            # Close it again: ML's idle state must come back with no hold left (checked below).
+            monitor_cmd(mon, "sendkey delete")
+            time.sleep(3)
         if q.poll() is not None:
             raise RuntimeError("QEMU died during the run, code %s (see qemu.log)" % q.returncode)
         monitor_cmd(mon, "quit")
@@ -241,7 +244,16 @@ def main():
         result["pm_calls_menu"] = len(re.findall(pm_re, menu))
         result["menu_s"] = max(3, a.menu_s)
     result["ml_holds_window_end"] = int(ps[-1]) if ps else None
-    result["ps_log"] = [l.strip()[-80:] for l in re.sub(r"\x1b\[[0-9;]*m", "", text).splitlines() if "[PS] " in l][:40]
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    ps_all = re.findall(r"\[PS\] (?:hold|release) .*? -> (\d+)", clean)
+    result["ml_holds_end"] = int(ps_all[-1]) if ps_all else None
+    # Card I/O is held per FIO call ("fio", src/fio-ml.c): ML reads its config, fonts and modules at
+    # boot, so the pairs must show up, and every hold must be released.
+    fio = re.findall(r"\[PS\] (hold|release) fio -> \d+", clean)
+    result["fio_holds"] = fio.count("hold")
+    result["fio_releases"] = fio.count("release")
+    result["fio_holds_in_window"] = len(re.findall(r"\[PS\] hold fio -> ", window))
+    result["ps_log"] = [l.strip()[-80:] for l in clean.splitlines() if "[PS] " in l and " fio -> " not in l][:40]
     result["pm_tail"] = [l.strip()[-100:] for l in upto.splitlines() if "[PM] " in l][-6:]
     # Who makes Canon toggle its counter during the window: the log lines (task switches,
     # other DebugMsgs) just before the first few DisablePowerSave messages.
@@ -254,9 +266,27 @@ def main():
                 break
     result["pm_context"] = ctx
     result["self_refresh"] = len(re.findall(r"pmSelfRefresh", text))
+    # Power-save checks for ML scenarios whose DryosDebugMsg log is captured:
+    #  - ML's holds are back to 0 at idle (end of the window) and after the menu closed;
+    #  - the per-call FIO hold appears and is always released.
+    # Pending: a config save from the menu (needs a menu change to make the config dirty).
+    failed = []
+    if a.boot and a.debugmsg_addr and not result.get("error"):
+        if result["ml_holds_window_end"] != 0:
+            failed.append("ML holds at window end = %s, expected 0" % result["ml_holds_window_end"])
+        if result["ml_holds_end"] != 0:
+            failed.append("ML holds after the menu closed = %s, expected 0" % result["ml_holds_end"])
+        if result["fio_holds"] == 0:
+            failed.append("no [PS] hold fio in the log")
+        if result["fio_holds"] != result["fio_releases"]:
+            failed.append("fio holds %d != releases %d" % (result["fio_holds"], result["fio_releases"]))
+    result["checks_failed"] = failed
     with open(os.path.join(a.out, "result.json"), "w") as f:
         json.dump(result, f, indent=1)
     print(json.dumps(result))
+    if failed:
+        print("power-save checks FAILED: %s" % "; ".join(failed), file=sys.stderr)
+        sys.exit(1)
     if result.get("error") or not summary or not summary.get("seconds"):
         print("no plugin summary for the measurement window", file=sys.stderr)
         sys.exit(1)

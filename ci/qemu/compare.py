@@ -59,6 +59,11 @@ def main():
             if r.get("pm_counter_samples"):
                 print("    counter samples in window (value=count): %s" % ", ".join(
                     "%s=%d" % kv for kv in sorted(r["pm_counter_samples"].items())))
+            if "fio_holds" in r:
+                print("    card I/O holds (fio): %d taken, %d released, %d in the window; ML holds after menu "
+                      "closed = %s; checks: %s" % (
+                          r["fio_holds"], r["fio_releases"], r.get("fio_holds_in_window", 0),
+                          r.get("ml_holds_end"), "; ".join(r.get("checks_failed") or []) or "ok"))
             if "pm_calls_menu" in r:
                 print("    ML menu open %.0f s after the window: [PM] calls = %d (%.2f/s)" % (
                     r["menu_s"], r["pm_calls_menu"], r["pm_calls_menu"] / r["menu_s"]))
