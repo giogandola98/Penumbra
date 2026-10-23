@@ -203,11 +203,20 @@ def main():
     result["log_lines"] = text.count("\n")
     # CPU power save (docs/analysis/powersave-hold.md): Canon logs its counter on every
     # Disable/EnablePowerSave, ML logs its own holds as "[PS] hold|release <who> -> <total>".
-    pm = re.findall(r"\[PM\] (?:Disable|Enable)PowerSave \(Counter = (\d+)\)", text)
-    ps = re.findall(r"\[PS\] (?:hold|release) .*? -> (\d+)", text)
-    result["pm_counter_last"] = int(pm[-1]) if pm else None
-    result["pm_calls"] = len(pm)
-    result["ml_holds_last"] = int(ps[-1]) if ps else None
+    # Values at the end of the measurement window (the ML menu is opened after it).
+    with open(log, "rb") as f:
+        upto = re.sub(r"\x1b\[[0-9;]*m", "", f.read(log_end or None).decode(errors="replace"))
+    with open(log, "rb") as f:
+        f.seek(log_start)
+        window = re.sub(r"\x1b\[[0-9;]*m", "", f.read(max(0, log_end - log_start)).decode(errors="replace"))
+    pm_re = r"\[PM\] (?:Disable|Enable)PowerSave \(Counter = (\d+)\)"
+    pm = re.findall(pm_re, upto)
+    ps = re.findall(r"\[PS\] (?:hold|release) .*? -> (\d+)", upto)
+    result["pm_counter_window_end"] = int(pm[-1]) if pm else None
+    result["pm_calls_in_window"] = len(re.findall(pm_re, window))
+    result["ml_holds_window_end"] = int(ps[-1]) if ps else None
+    result["ps_log"] = [l.strip()[-80:] for l in re.sub(r"\x1b\[[0-9;]*m", "", text).splitlines() if "[PS] " in l][:40]
+    result["pm_tail"] = [l.strip()[-100:] for l in upto.splitlines() if "[PM] " in l][-6:]
     result["self_refresh"] = len(re.findall(r"pmSelfRefresh", text))
     with open(os.path.join(a.out, "result.json"), "w") as f:
         json.dump(result, f, indent=1)

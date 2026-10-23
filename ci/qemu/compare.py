@@ -51,10 +51,10 @@ def main():
             print("%s PC profile (%d monitor samples): %s" % (
                 sc, r["pc_samples"], ", ".join("%s=%.0f%%" % (pc, f * 100) for pc, f in r["top_pcs"][:5])))
     for sc, r in rows:
-        if r and r.get("pm_calls") is not None:
-            print("%s power save: Canon counter (last [PM] msg) = %s over %d calls, ML holds (last [PS] msg) = %s, "
-                  "pmSelfRefresh msgs = %d" % (sc, r.get("pm_counter_last"), r.get("pm_calls", 0),
-                                               r.get("ml_holds_last"), r.get("self_refresh", 0)))
+        if r and "pm_counter_window_end" in r:
+            print("%s power save at window end: Canon counter = %s, ML holds = %s; [PM] calls in window = %d, "
+                  "pmSelfRefresh msgs = %d" % (sc, r.get("pm_counter_window_end"), r.get("ml_holds_window_end"),
+                                               r.get("pm_calls_in_window", 0), r.get("self_refresh", 0)))
     print("\nwakeups/s = WFI (idle entries) per second; busy ratio = 1 - halted/elapsed host time "
           "(TCG over-estimates it). See docs/EMULATION.md.")
 
