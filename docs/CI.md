@@ -38,3 +38,10 @@ bytes from CI. The baseline is taken from the CI container (`/work`); compare ag
 
 After an intentional size change is reviewed and merged, regenerate it from a CI-equivalent build
 (podman command above, with `ci/build.sh --update-baseline`) and commit `ci/baseline.txt`.
+
+## Emulation job
+
+The `emulation` job (same workflow) builds the qemu-eos image `ci/qemu/Containerfile` (content-addressed tag,
+rebuilt only when that file changes), runs the wakeup-plugin self-test, and runs the camera scenarios when the
+ROM package is available (otherwise `SKIPPED`). Results: artifact `ml-optimized-emulation`.
+Details, metrics and ROM policy: `docs/EMULATION.md`.
