@@ -31,10 +31,13 @@ The 1100D (DIGIC 4) is the user's second body and validates the whole chain befo
 | `canon` | base image, no ML | off (`firmware=boot=0`) | Canon firmware idle baseline |
 | `ml-full` | `ML_PROFILE=full` zip (1100D: the only build) | on | upstream-equivalent ML |
 | `ml-photo` | `ML_PROFILE=photo` zip (EOSM only) | on | this fork's photo build |
+| `ml-hold` | `make POWERSAVE_HOLD=y` zip (1100D) | on | `ml-full` with counted powersave holds (`analysis/powersave-hold.md`) |
 
 Timeline per scenario (host time): boot `WARMUP_S` (40 s, not measured) → screenshot `boot.png` →
 measure `MEASURE_S` (30 s) → screenshot `idle.png` → `quit`.
 For ML scenarios, after the window, the Trash key (`sendkey delete`) opens the ML menu → `menu.png`.
+`comparison.md` also reports, per scenario, Canon's last power-save counter (`[PM] … (Counter = n)`), ML's last hold
+total (`[PS] … -> n`) and the number of `pmSelfRefresh` messages.
 Outputs per scenario in `emu-out/<CAM>/<scenario>/`: `wakeups.json`, `tasks.json`, `result.json`, `qemu.log`
 (DryosDebugMsg + task switches), screenshots; `emu-out/<CAM>/comparison.md` holds the table.
 
