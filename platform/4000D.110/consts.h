@@ -2,9 +2,10 @@
  *  4000D 1.1.0 consts
  *
  *  Values marked "4000D:" were located in this firmware (how: comment, details in
- *  docs/firmware/4000D-stubs.md). Values marked "1300D value, not verified" belong to
- *  LiveView / movie / raw code paths, which this port does not enable yet; they only keep
- *  shared code compiling and must be checked before the matching feature is turned on.
+ *  docs/firmware/4000D-stubs.md and, for LiveView / movie / raw, docs/firmware/4000D-consts.md).
+ *  Values marked "1300D value, not verified" belong to LiveView / movie / raw code paths, which
+ *  this port does not enable yet; they only keep shared code compiling and must be checked
+ *  before the matching feature is turned on.
  */
 
 #define CANON_SHUTTER_RATING 100000
@@ -23,8 +24,9 @@
 
 #define DRYOS_ASSERT_HANDLER 0x3508C // 4000D: assert routine (RAM 0x3C48) calls the handler stored here
 
-// Movie recorder: 1300D values, not verified (movie mode is off)
-#define MVR_992_STRUCT (*(void **)(0x315dc + 0x4))
+// Movie recorder (movie mode is off). 4000D: struct pointer used by mvrResultCBR (1100D 0x1DF0 + 4);
+// the field offsets are the 1300D ones, placed like the 1100D's in mvrSMEncodeDone (likely, not verified)
+#define MVR_992_STRUCT (*(void **)(0x30DD4 + 0x4))
 #define MVR_FRAME_NUMBER (*(int *)(332 + MVR_992_STRUCT))
 #define MVR_BYTES_WRITTEN MEM((296 + MVR_992_STRUCT))
 #define MVR_BUFFER_USAGE 70 // wrong, but needs to be non-zero to avoid a compiler warning
@@ -37,28 +39,33 @@
 
 #define AUDIO_MONITORING_HEADPHONES_CONNECTED 0
 
-// LiveView buffers: 1300D values, not verified (LiveView is off)
+// LiveView buffers: 1300D values, not verified (LiveView is off). On this firmware they come from the
+// SRM allocator at run time (SRM_AllocateMemoryResourceForLiveViewYuv), not from ROM literals: a RAM
+// dump or a log of YUV422_LV_BUFFER_DISPLAY_ADDR in LiveView is needed.
 #define YUV422_LV_BUFFER_1 0x40d07800
 #define YUV422_LV_BUFFER_2 0x4c233800
 #define YUV422_LV_BUFFER_3 0x4f11d800
 
-#define DEFAULT_RAW_BUFFER MEM(MEM(0x37930 + 0x30)) // 1300D value, not verified (raw is off)
+#define DEFAULT_RAW_BUFFER MEM(MEM(0x370C0 + 0x30)) // 4000D: getter 0xFE194E5C, same code as the 1100D one (raw is off)
 
+// 4000D: the LV path connects EDMAC write channel 3 (done callback logs "WriteEDmacVramCompleteCBR")
+// and the HD/YUV path channel 2 ("WriteEDmacYuvCompleteCBR"); channel table at 0xFE86F280
 #define REG_EDMAC_WRITE_LV_ADDR 0xc0f04308 // SDRAM address of LV buffer (aka VRAM)
 #define REG_EDMAC_WRITE_HD_ADDR 0xc0f04208 // SDRAM address of HD buffer (aka YUV)
 
-// 4000D: display manager struct 0x31010 (UpdateReverseTFT uses +0x7C, the display state object is +0xA0)
+// 4000D: display manager struct 0x31010 (UpdateReverseTFT uses +0x7C, the display state object is +0xA0);
+// SetImageVramAddress logs +0xB0 as the image VRAM address (1100D: 0x238C + 0xAC)
 #define YUV422_LV_BUFFER_DISPLAY_ADDR (*(uint32_t *)(0x31010 + 0xB0))
 #define YUV422_HD_BUFFER_DMA_ADDR (shamem_read(REG_EDMAC_WRITE_HD_ADDR))
 
-// 1300D values, not verified (movie is off)
+// 1300D values, not verified (movie is off; allocated at run time like the LV buffers)
 #define YUV422_HD_BUFFER_1 0x44000080
 #define YUV422_HD_BUFFER_2 0x46000080
 #define YUV422_HD_BUFFER_3 0x48000080
 #define YUV422_HD_BUFFER_4 0x4e000080
 #define YUV422_HD_BUFFER_5 0x50000080
 
-#define FOCUS_CONFIRMATION 0 // not located yet (LiveView focus info is off)
+#define FOCUS_CONFIRMATION 0 // not located (LiveView focus info is off; the 1100D field's struct changed layout here)
 
 // 4000D: main controller ([MC]) struct 0x351A4 (1300D 0x359A0). +0x1C is set to 1 on "cam event metering
 // start" (half-shutter) and cleared on metering end; DisplaySensorStop writes +0x18.
@@ -69,27 +76,34 @@
 #define GMT_NFUNCS 7
 #define GMT_FUNCTABLE 0xFE7F6134 // 4000D: table copied by gui_main_task (7 entries, 28 bytes)
 
-// LiveView bottom bar / ISO adjustment: not located (LiveView is off); never active
+// LiveView bottom bar / ISO adjustment: kept inactive while LiveView is off. Located for when it is enabled:
+//   ISO_ADJUSTMENT_ACTIVE   ((*(int *)0x37A9C) == 0xF)    4000D: field written by ptpNotifyOlcInfoChanged (verified)
+//   LV_BOTTOM_BAR_DISPLAYED (((*(int8_t *)0x37A9C) == 0xF) || ((*(int8_t *)0x3F564) != 0x17))  (likely, as on 1100D)
 #define LV_BOTTOM_BAR_DISPLAYED 0
 #define ISO_ADJUSTMENT_ACTIVE 0
-#define SHOOTING_MODE (*(int *)0x3592C) // 1300D value, not verified (unused by this build)
+#define SHOOTING_MODE (*(int *)0x3592C) // 1300D value, not verified (not used by ML's code)
 #define UNAVI_FEEDBACK_TIMER_ACTIVE (MEM(0x3F550 + 0x14) != 0x17) // 4000D: struct written by HideUnaviFeedBack
 
-#define AE_STATE 0 // not located (LiveView exposure is off)
+// LiveView exposure is off. 4000D: copyOlcDataToStorage (0xFE2A89E8) writes the storage at 0x3A1C8
+// (1100D 0x7E18): AE_STATE = (*(int8_t *)(0x3A1C8 + 0x1C)) verified, AE_VALUE = +0x1D likely
+#define AE_STATE 0
 #define AE_VALUE 0
 
 #define CURRENT_GUI_MODE (*(int *)(0x35D08 + 0x48)) // 4000D: SetGUIRequestMode stores the request at +0x4C, mode at +0x48 (1100D: 0x3918)
 
 #define COLOR_FG_NONLV 80
-#define GUIMODE_WB 5
+// 4000D: GUI modes requested by the IDLE handler (0xFE2BD4D8..0xFE2C2EA8), named by its START_* strings;
+// numbering identical to the 1100D's up to 0x46. WB / picture style / Q / flash / quality are the Q-screen
+// ("UNAVI") modes, as on the 1100D (the 1300D values 5/4/6 are the menu dialogs of the same settings).
+#define GUIMODE_WB 0x2B
 #define GUIMODE_FOCUS_MODE 9
 #define GUIMODE_DRIVE_MODE 8
-#define GUIMODE_PICTURE_STYLE 4
+#define GUIMODE_PICTURE_STYLE 0x2A
 #define GUIMODE_PLAY 1
 #define GUIMODE_MENU 2
-#define GUIMODE_Q_UNAVI 0x1F
-#define GUIMODE_FLASH_AE 0x22
-#define GUIMODE_PICQ 6
+#define GUIMODE_Q_UNAVI 0x23
+#define GUIMODE_FLASH_AE 0x28
+#define GUIMODE_PICQ 0x2D
 #define GUIMODE_MOVIE_ENSURE_A_LENS_IS_ATTACHED (CURRENT_GUI_MODE == 0x1e)
 #define GUIMODE_MOVIE_PRESS_LV_TO_RESUME (CURRENT_GUI_MODE == 0x1f)
 
@@ -131,6 +145,7 @@
 #define DISPLAY_TRAP_FOCUS_MSG_BLANK "          "
 
 // LiveView is off, so the ML menu always uses the photo-mode GUI mode
+// (in LiveView it would be 0x44, START_LV_PS_SETTING_MODE, as the 1100D's 68)
 #define GUIMODE_ML_MENU 2
 
 #define NUM_PICSTYLES 10
@@ -161,9 +176,10 @@
 
 #define IMGPLAY_ZOOM_LEVEL_ADDR (0x3A810 + 12) // 4000D: counter decremented by GuiImageZoomDown
 #define IMGPLAY_ZOOM_LEVEL_MAX 14
-// 1300D values, not verified (playback zoom features are off)
-#define IMGPLAY_ZOOM_POS_X MEM(0x6FCC4)
-#define IMGPLAY_ZOOM_POS_Y MEM(0x6FCC4 + 0x4)
+// Playback zoom features are off. 4000D: "[ImgPlyer] CentrePos" logs 0x6D8F8 / +4 (address verified);
+// centre and delta values are the 1300D ones, not verified
+#define IMGPLAY_ZOOM_POS_X MEM(0x6D8F8)
+#define IMGPLAY_ZOOM_POS_Y MEM(0x6D8F8 + 0x4)
 #define IMGPLAY_ZOOM_POS_X_CENTER 0x144
 #define IMGPLAY_ZOOM_POS_Y_CENTER 0xd8
 #define IMGPLAY_ZOOM_POS_DELTA_X (0x144 - 0x93)
@@ -173,8 +189,10 @@
 
 #define WINSYS_BMP_DIRTY_BIT_NEG MEM(0x3D2F0 + 0x2C) // 4000D: checkdraftvram aligned with the 1100D one (0xB198 -> 0x3D2F0)
 
-// manual exposure overrides: 1300D values, not verified (LiveView is off)
-#define LVAE_STRUCT 0x3B7A4
+// manual exposure overrides (LiveView is off). 4000D: lvae_setdispgain / setcontrolbv /
+// setmoviemanualcontrol and the control-parameter setter write +0x26 / +0x1C / +0x78 / +0x1E..+0x24 of
+// this struct, the same offsets as on the 1100D (0x8B7C)
+#define LVAE_STRUCT 0x3AF2C
 #define CONTROL_BV (*(uint16_t *)(LVAE_STRUCT + 0x1c))
 #define CONTROL_BV_TV (*(uint16_t *)(LVAE_STRUCT + 0x1e))
 #define CONTROL_BV_AV (*(uint16_t *)(LVAE_STRUCT + 0x20))
@@ -196,8 +214,10 @@
 #define DISPLAY_STATEOBJ (*(struct state_object **)(0x31010 + 0xA0)) // 4000D: state object created by the display manager init
 #define DISPLAY_IS_ON (DISPLAY_STATEOBJ->current_state != 0)
 
-// 1300D values, not verified (LiveView / FPS override are off)
-#define VIDEO_PARAMETERS_SRC_3 0x6A95C
+// LiveView / FPS override are off. 4000D: "[EVF] evfSetParamInterrupt" reads +8 / +9 / +0xE of the
+// struct returned by 0xFE3019C0 (1100D 0x70C0C); +0xA / +0xC not seen (likely). The blanking registers
+// below are 1300D values, not verified (run-time table, not in ROM).
+#define VIDEO_PARAMETERS_SRC_3 0x68590
 #define FRAME_SHUTTER_TIMER (*(uint16_t *)(VIDEO_PARAMETERS_SRC_3 + 0xC))
 #define FRAME_ISO (*(uint8_t *)(VIDEO_PARAMETERS_SRC_3 + 0x8))
 #define FRAME_APERTURE (*(uint8_t *)(VIDEO_PARAMETERS_SRC_3 + 0x9))
