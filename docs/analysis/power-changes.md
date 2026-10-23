@@ -58,3 +58,48 @@ The photo build links 14 boot tasks (full: 18).
   Without FPS override, ML never changes the FPS, and `bv_auto_update()` still runs from its property handlers (`lens.c`). No loss.
 - A `magic.cfg` written by a full build may have `digic.vignetting.corr=1`.
   In the photo build, `vignetting_correction_initialized` stays 0, so `vignetting_correction_apply_regs()` returns early. It is also movie-mode only.
+
+## 2. `tweak_task`: 20 Hz only when needed (audit row 5). Bug fix, both profiles
+
+**Change** (`tweaks.c`, `gui-common.c`).
+Upstream re-armed the "2 s responsive" countdown on every loop while the display was on, so `tweak_task` always ran at 20 Hz.
+Now the 50 ms period applies only in these cases:
+- for 2 s after a user key event (`tweak_task_wakeup()`, called next to `idle_wakeup_reset_counters()` in `handle_common_events_by_feature`);
+- for 2 s after any display on/off transition, which keeps the original intent of the comment;
+- while recording, sticky half-shutter or sticky DOF is on;
+- during timelapse playback;
+- while a display tweak that fights Canon overwrites is on: LV brightness, contrast, saturation, crazy colours, DIGIC peaking, colour scheme, image position, upside-down, grayscale peaking. All are off by default.
+
+Otherwise it sleeps 500 ms.
+The sleep is a `take_semaphore(tweak_wake_sem, …)`.
+The key-event hook gives the semaphore when the task is in slow mode, so the first key press is served at once instead of after up to 500 ms.
+The semaphore is given only on the slow→fast edge, so its count stays bounded.
+
+**The bottom-bar idle reset was not moved** into `handle_other_events`.
+Canon draws the bar after it handles the event, so a check inside the event handler would miss the first dial click.
+The bar stays on screen for about 2 s, so the existing check in the 2 Hz loop still catches it.
+Moving the check would not remove any wakeup.
+
+**Profiles.** Both. This is the bug fix; the full `autoexec.bin` grows by 256 B.
+
+**Gain.** LV idle, display on, defaults: 20 → 2 wakeups/s, so **−18/s**.
+With the display off it was already 2/s.
+
+**Verify (QEMU, method 0).**
+1. Idle photo screen for 30 s: `tweak_task` ≈ 2/s (parent commit: ≈ 20/s).
+2. Inject a key (`sendkey` for an arrow or INFO in the qemu monitor).
+   For the next 2 s the rate is ≈ 20/s, then it falls back to 2/s.
+   GDB: break on `tweak_task_wakeup` and check that it is hit once per key press.
+3. Enable *Display → LV saturation = Grayscale*.
+   The rate stays at ≈ 20/s while idle.
+   Set it back and the rate returns to 2/s after 2 s.
+4. Toggle the display (INFO until the display is off, or the `DISPLAY_IS_ON` property): 2 s at 20/s, then 2/s.
+
+**Risks.**
+- State changes not caused by a key and not covered by a display tweak are now handled within ≤ 500 ms instead of ≤ 50 ms.
+  Examples: Canon leaving QR review on a timer, the bottom bar after an exposure change, the warnings in `warn_step`.
+  These are visual and heuristic only.
+- `ISO_ADJUSTMENT_ACTIVE` and the bottom-bar idle reset are polled at 2 Hz.
+  That is far below the powersave countdown resolution (seconds).
+- On hardware, check quick zoom and focus-box speed in playback.
+  Both are key-driven and get a direct wakeup, so no change is expected.

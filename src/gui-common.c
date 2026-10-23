@@ -482,6 +482,10 @@ int handle_common_events_by_feature(struct event * event)
     {
         /* powersave: ignore internal Canon events and ML events, but wake up on any other key press */
         idle_wakeup_reset_counters(event->param);
+
+        /* tweak_task idles at 2 Hz; let it react to this key at 20 Hz */
+        extern void tweak_task_wakeup();
+        tweak_task_wakeup();
     }
     
     // If we're here, we're dealing with a button press.  Record the timestamp

@@ -957,21 +957,51 @@ static void play_zoom_center_pos_update()
 
 #endif // FEATURE_QUICK_ZOOM
 
+/* tweak_task polls at 20 Hz only while something may need a quick reaction:
+ * for 2 s after a key event or a display on/off transition, and while a
+ * feature that needs continuous polling is active. Otherwise it polls at 2 Hz.
+ * Upstream re-armed the 2 s window on every loop while the display was on,
+ * so the task ran at 20 Hz for the whole session. */
+#define TWEAK_FAST_WINDOW 40    /* 50 ms loops = 2 s */
+static volatile int tweak_fast_countdown = TWEAK_FAST_WINDOW;
+static struct semaphore * tweak_wake_sem = 0;
+static int display_tweaks_active();
+
+/* Called from the GUI event handler on user key events. Ends a 500 ms sleep
+ * right away, so key-driven actions (quick zoom, focus box, timelapse
+ * playback...) get the same latency as before. */
+void tweak_task_wakeup()
+{
+    int was_slow = !tweak_fast_countdown;
+    tweak_fast_countdown = TWEAK_FAST_WINDOW;
+    if (was_slow && tweak_wake_sem) give_semaphore(tweak_wake_sem);
+}
+
 static void
 tweak_task( void* unused)
 {
     extern void movtweak_task_init();
     movtweak_task_init();
+    tweak_wake_sem = create_named_semaphore("tweak_wake", SEM_CREATE_LOCKED);
     
     TASK_LOOP
     {
-        // keep this task responsive for first 2 seconds after turning display off (for reacting quickly to palette changes etc)
-        static int display_countdown = 40;
-        if (DISPLAY_IS_ON)
-            display_countdown = 40;
-        else if (display_countdown) display_countdown--;
+        // keep this task responsive for 2 seconds after the display turns on or off (for reacting quickly to palette changes etc)
+        static int display_was_on = -1;
+        if (DISPLAY_IS_ON != display_was_on)
+        {
+            display_was_on = DISPLAY_IS_ON;
+            tweak_fast_countdown = TWEAK_FAST_WINDOW;
+        }
         
-        msleep(display_countdown || RECORDING || halfshutter_sticky || dofpreview_sticky ? 50 : 500);
+        int fast = tweak_fast_countdown || RECORDING || halfshutter_sticky || dofpreview_sticky || display_tweaks_active();
+        #ifdef FEATURE_PLAY_TIMELAPSE
+        fast = fast || timelapse_playback;
+        #endif
+        if (tweak_fast_countdown) tweak_fast_countdown--;
+        
+        /* the semaphore only shortens the sleep (see tweak_task_wakeup) */
+        take_semaphore(tweak_wake_sem, fast ? 50 : 500);
         
         extern void movtweak_step();
         movtweak_step();
@@ -2370,6 +2400,19 @@ static int focus_peaking_grayscale_running()
         !focus_peaking_as_display_filter() &&
         zebra_should_run()
         ;
+}
+
+/* These re-apply display state that Canon can overwrite at any time (LV
+ * image registers, palette, image position, upside-down mirror). While one
+ * is on, tweak_task keeps polling at 20 Hz so Canon's reset stays invisible.
+ * All of them are off by default. */
+static int display_tweaks_active()
+{
+    extern int menu_upside_down;
+    return preview_brightness || preview_contrast || preview_saturation ||
+           preview_crazy || preview_peaking || bmp_color_scheme ||
+           lcd_adjust_position || menu_upside_down ||
+           focus_peaking_grayscale_running();
 }
 
 #ifdef FEATURE_LV_SATURATION
