@@ -84,7 +84,7 @@ case "$CAM" in 4000D) MENU_TOUR=${MENU_TOUR-right,right,right,right,right,right,
 case "$CAM" in 4000D) IVL_PHOTO=${IVL_PHOTO:-1} ;; *) IVL_PHOTO=${IVL_PHOTO:-0} ;; esac
 # Modules switched on (ML/SETTINGS/<name>.en) in the photo scenarios, so they are loaded at boot. ML ships modules
 # disabled; sd_clock (SD overclock) stays off on purpose.
-case "$CAM" in 4000D) PHOTO_MODULES=${PHOTO_MODULES-file_man img_name} ;; *) PHOTO_MODULES=${PHOTO_MODULES-} ;; esac
+case "$CAM" in 4000D) PHOTO_MODULES=${PHOTO_MODULES-file_man img_name lua} ;; *) PHOTO_MODULES=${PHOTO_MODULES-} ;; esac
 
 # Stubs against their ROM evidence (tools/check_stubs.py; skipped for platforms without an evidence file).
 python3 -I "$ROOT/tools/check_stubs.py" "$PLAT" "$romdir/ROM1.BIN" | tee "$OUT/stubs-check.txt" || { echo "stub check FAILED"; exit 1; }
