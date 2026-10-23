@@ -19,5 +19,21 @@ RESTARTSTART = 0x9E1E0
 
 ML_AF_PATTERNS_OBJ = n
 
+# Build profile, see docs/BUILD-PROFILES.md
+#   make                    -> photo profile (default for this fork)
+#   make ML_PROFILE=full    -> upstream-equivalent feature set
+ML_PROFILE ?= photo
+
+ifeq ($(ML_PROFILE),photo)
+    CFLAGS_PLATFORM += -DCONFIG_PROFILE_PHOTO
+    MODULES_INCLUDED = modules-photo.included
+    # video-only code: bitrate hacks, audio codec, FPS override, movie tweaks, crop mode
+    ML_SRC_OBJS_EXCLUDE =
+else ifeq ($(ML_PROFILE),full)
+    CFLAGS_PLATFORM += -DCONFIG_PROFILE_FULL
+else
+    $(error Unknown ML_PROFILE '$(ML_PROFILE)' (expected photo or full))
+endif
+
 include ../Makefile
 .DEFAULT_GOAL := $(BUILD_DIR)/cam_complete

@@ -555,7 +555,10 @@ static void audio_common_task(void * unused)
 
 }
 
+/* photo profile: no audio meters / recording, so don't poll the audio levels forever (battery) */
+#ifndef CONFIG_PROFILE_PHOTO
 TASK_CREATE( "audio_common_task", audio_common_task , 0, 0x18, 0x1000 );
+#endif
 /** Write the MGAIN2-0 bits.
  * Table 19 for the gain values (variable "bits"):
  *

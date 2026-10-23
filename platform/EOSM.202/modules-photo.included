@@ -1,0 +1,12 @@
+# Photo profile: modules included in magiclantern.zip (see docs/BUILD-PROFILES.md)
+adv_int
+autoexpo
+deflick
+dual_iso
+ettr
+file_man
+img_name
+lua
+pic_view
+sd_clock
+silent
