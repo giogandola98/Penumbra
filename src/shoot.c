@@ -6076,6 +6076,21 @@ shoot_task( void* unused )
             if (gui_menu_shown() || get_halfshutter_pressed()) continue;
 
             /* last second - try to get slightly better timing */
+            #ifdef CONFIG_PROFILE_PHOTO
+            /* Sleep straight to the shot time instead of waking every 10 ms
+             * (up to 100 wakeups per shot). msleep is tick-quantised and may
+             * return a tick early, so the 10 ms loop below still finishes the
+             * wait; it now runs at most once or twice. Jitter is unchanged:
+             * the shot starts within one tick (10 ms) plus scheduling latency
+             * after the second boundary. ms_to_shot is <= 1000 here unless
+             * the loop above ended early (shutdown); the cap then leaves the
+             * rest of the wait to the old 10 ms loop, as before. */
+            int ms_to_shot = intervalometer_next_shot_time * 1000 - get_ms_clock();
+            if (ms_to_shot > 0)
+            {
+                msleep(MIN(ms_to_shot, 1000));
+            }
+            #endif
             while (SECONDS_REMAINING > 0)
             {
                 msleep(10);

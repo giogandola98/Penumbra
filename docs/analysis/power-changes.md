@@ -220,3 +220,59 @@ The full `autoexec.bin` size is unchanged (455,232 B).
   If the camera locks up within that second, the log can be lost.
   This is the main item to check on hardware, as the audit notes.
 - If trap focus is ever re-enabled on EOSM, `FOCUS_MISC_EVENT_DRIVEN` turns off by itself and the 10 Hz poll returns.
+
+## 5. Intervalometer: no 10 ms spin in the last second (audit §3.4 / row 9, first part). Photo only
+
+**Change** (`shoot.c`, `shoot_task`).
+In the last second before a shot, the task used to run `while (SECONDS_REMAINING > 0) msleep(10);`.
+Now it first computes `ms_to_shot = intervalometer_next_shot_time * 1000 - get_ms_clock()` and sleeps that long, capped at 1 s.
+The old 10 ms loop is kept after that.
+DryOS `msleep` is quantised to 10 ms ticks and may return up to one tick early, so the loop finishes the wait.
+It normally runs 0–2 times.
+`get_ms_clock()` and `get_seconds_clock()` both come from the same microsecond counter (`seconds_clock_update`), so the computed target matches the condition the loop tests.
+
+**Timing / jitter.** The shot still starts at the first 10 ms tick after the second boundary.
+Worst-case lateness is one tick (10 ms) plus the scheduling latency of higher-priority tasks, the same as before.
+The single `msleep` can return late by at most one tick: it is rounded up to the next tick, and it wakes on that tick, so lateness stays at ≤ 10 ms plus latency.
+The shot can never be early, because the `SECONDS_REMAINING > 0` loop is still the gate.
+The 200 ms status loop and the `idle_force_powersave_now()` behaviour are unchanged.
+The rest of audit row 9 (no `bmp_printf` with the display off, pausing LV between shots) is not part of this change.
+
+**Gain.** Up to 100 → ≤ 3 wakeups per shot in the last second.
+For a 5 s interval that is ≈ −20 wakeups/s while a timelapse runs.
+There is no change at idle.
+
+**Profiles.** Photo only. The full `autoexec.bin` size is unchanged.
+
+**Verify (QEMU).**
+1. Set Intervalometer = 5 s, start it, and let it take 10 shots (QEMU emulates the shutter release on EOSM via `take_fast_pictures` → `lens_take_picture`; if capture is not emulated, break on `take_fast_pictures` and return).
+2. Wakeups: count `shoot_task` dispatches over the run.
+   Expect about (5 Hz × 4 s + ≤ 3) per shot instead of (5 Hz × 4 s + ~100).
+3. Timing: GDB breakpoint on `take_fast_pictures`.
+   Its command prints `get_us_clock()` (or `microseconds_clock`) and continues.
+   - The intervals between shots must be 5 000 ms ± 20 ms.
+   - Each shot must fall 0–20 ms after a whole second of `get_seconds_clock()`; it is never before the boundary.
+   - Compare the distribution against the parent commit. Expect the same mean and the same maximum lateness, within QEMU timer noise.
+4. Edge cases:
+   - Open the ML menu, or hold half-shutter, during the countdown: the shot is postponed by one second, as before.
+   - Stop the intervalometer in the last second: no shot.
+   - Power off during the countdown: the shutdown test (§0) completes.
+
+**Risks.** Low.
+If `msleep` overshot by more than one tick on real hardware (not expected in DryOS), shots would be late by that amount.
+The check in step 3 measures this on hardware later.
+
+## Summary
+
+| § | Item | Profiles | Wakeups/s saved (LV idle, defaults) |
+|---|---|---|---|
+| 1 | video-only boot tasks | photo | 11 (fps, bitrate) + 100 (audio, earlier profile commit) |
+| 2 | `tweak_task` 2 Hz | both (bug fix) | 18 |
+| 3 | infinite waits | photo | 13 |
+| 4 | housekeeping polls | photo | 19 |
+| 5 | intervalometer spin | photo | 0 idle; ≈ 20 while a 5 s timelapse runs |
+
+In total, the photo profile saves about **61 wakeups/s** from these commits, on top of the 100/s from dropping audio.
+Using the audit's numbers, LV idle goes from ~264/s (full, upstream) to about **103/s** (photo).
+The full profile saves 18/s from the `tweak_task` fix.
+What remains is dominated by `livev_hiprio_task` (~60), `shoot_task` (20), `cls_task` (10), `clock_task` (5) and `livev_loprio_task` (5); these are audit rows 4, 10 and 11, which are medium or high risk.
