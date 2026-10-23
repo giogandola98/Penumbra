@@ -5696,6 +5696,8 @@ static void menu_open()
     menu_help_active = 0;
     keyrepeat = 0;
     menu_shown = 1;
+    /* key repeat, live values and menu timers must not freeze in Canon's idle sleep */
+    powersave_hold_set("menu", 1);
     //~ menu_hidden_should_display_help = 0;
     if (lv)
         menu_zebras_mirror_dirty = 1;
@@ -5716,6 +5718,7 @@ static void menu_close()
     if (!menu_shown)
         return;
     menu_shown = false;
+    powersave_hold_set("menu", 0);
 
     customize_mode = 0;
     update_disp_mode_bits_from_params();
@@ -7201,8 +7204,11 @@ struct cbr
 static void task_without_powersave(struct cbr * cbr)
 {
     powersave_prohibit();
+    /* the menu (and its hold) is closed by now; these actions often msleep between steps */
+    powersave_hold("menu action");
     cbr->user_routine(cbr->argument);
     free(cbr);
+    powersave_release("menu action");
     powersave_permit();
 }
 

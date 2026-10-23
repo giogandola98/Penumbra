@@ -15,6 +15,7 @@
 #include "beep.h"
 #include "module.h"
 #include "shoot.h"
+#include "powersave.h"
 #include "focus.h"
 #include "imgconv.h"
 #include "zebra.h"
@@ -997,6 +998,8 @@ tweak_task( void* unused)
         int fast = tweak_fast_countdown || RECORDING || halfshutter_sticky || dofpreview_sticky || display_tweaks_active();
         #ifdef FEATURE_PLAY_TIMELAPSE
         fast = fast || timelapse_playback;
+        /* steps through images on a timer, with no key events to wake the CPU */
+        powersave_hold_set("play timelapse", timelapse_playback);
         #endif
         if (tweak_fast_countdown) tweak_fast_countdown--;
         

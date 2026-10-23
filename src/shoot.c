@@ -2726,6 +2726,9 @@ bulb_take_pic(int duration)
     }
     ml_taking_pic = 1;
 
+    /* the exposure is timed with msleep / get_ms_clock, which stop in Canon's deep idle sleep */
+    powersave_hold("bulb");
+
     printf("[BULB] taking picture @ %s %d.%d\" %s\n",
         lens_format_iso(lens_info.raw_iso),
         duration / 1000, (duration / 100) % 10,
@@ -2872,6 +2875,7 @@ bulb_take_pic(int duration)
     set_shooting_mode(m0r);
     msleep(200);
     
+    powersave_release("bulb");
     ml_taking_pic = 0;
 #endif
 
@@ -4933,6 +4937,8 @@ void movie_end()
 // AF is disabled (don't enable it here, it will only introduce weird bugs)
 void hdr_shot(int skip0, int wait)
 {
+    /* a sequence of shots with waits in between (bracketing, intervalometer, remote triggers) */
+    powersave_hold("hdr shot");
     NotifyBoxHide();
 #ifdef FEATURE_HDR_BRACKETING
     if (is_hdr_bracketing_enabled())
@@ -4958,6 +4964,7 @@ void hdr_shot(int skip0, int wait)
 
     lens_wait_readytotakepic(64);
     picture_was_taken_flag = 0;
+    powersave_release("hdr shot");
 }
 
 int remote_shot_flag = 0; // also in lcdsensor.c
@@ -5472,7 +5479,24 @@ shoot_task( void* unused )
     {
         int msg;
         int delay = 50;
-        
+
+        /* features that run from this task's timers while nobody touches the camera:
+         * keep Canon out of its timer-stopping idle sleep while they are on (powersave.h).
+         * Checked right before this task sleeps, after any change made in the last iteration. */
+        #ifdef FEATURE_INTERVALOMETER
+        powersave_hold_set("intervalometer", intervalometer_running);
+        #endif
+        #ifdef FEATURE_MOTION_DETECT
+        /* outside LV it only runs while half-shutter is held */
+        powersave_hold_set("motion detect", motion_detect && lv);
+        #endif
+        #ifdef FEATURE_AUDIO_REMOTE_SHOT
+        powersave_hold_set("audio remote", audio_release_running);
+        #endif
+        #ifdef FEATURE_LCD_SENSOR_REMOTE
+        powersave_hold_set("lcd remote", lcd_release_running);
+        #endif
+
         /* specify the maximum wait time */
         if(!DISPLAY_IS_ON)
         {
@@ -5628,6 +5652,8 @@ shoot_task( void* unused )
                 {
                     msleep(100);
                 }
+                /* 2 s countdown after half-shutter is released, then the exposure */
+                powersave_hold("bulb timer");
                 int m0 = shooting_mode;
                 wait_till_next_second();
                 NotifyBox(2000, "[2s] Bulb timer: %s", format_time_hours_minutes_seconds(d));
@@ -5637,6 +5663,7 @@ shoot_task( void* unused )
                 {
                     NotifyBox(2000, "Bulb timer canceled.");
                     info_led_off();
+                    powersave_release("bulb timer");
                     continue;
                 }
                 NotifyBox(2000, "[1s] Bulb timer: %s", format_time_hours_minutes_seconds(d));
@@ -5646,10 +5673,12 @@ shoot_task( void* unused )
                 {
                     NotifyBox(2000, "Bulb timer canceled.");
                     info_led_off();
+                    powersave_release("bulb timer");
                     continue;
                 }
                 info_led_off();
                 bulb_take_pic(d * 1000);
+                powersave_release("bulb timer");
             }
         }
         #endif

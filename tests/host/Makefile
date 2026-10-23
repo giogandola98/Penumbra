@@ -1,4 +1,4 @@
-# Host-side characterization tests for the overlay pixel kernels.
+# Host-side tests: overlay pixel kernels (characterization) and powersave hold bookkeeping.
 #   make          build and run the tests (non-zero exit on any mismatch)
 #   make bench    host timing, original vs new (indicative only)
 #   make armcount ARM926 instruction counts, original vs new (see below)
@@ -19,14 +19,18 @@ all: test
 test_overlays: $(TEST_SRCS) $(TEST_HDRS) Makefile
 	$(CC) $(CFLAGS) -o $@ $(TEST_SRCS)
 
-test: test_overlays
+test_powersave_hold: test_powersave_hold.c $(SRC_DIR)/powersave_hold.h Makefile
+	$(CC) $(CFLAGS) -o $@ test_powersave_hold.c
+
+test: test_overlays test_powersave_hold
 	./test_overlays
+	./test_powersave_hold
 
 bench: test_overlays
 	./test_overlays bench
 
 clean:
-	rm -f test_overlays arm/arm_driver.elf
+	rm -f test_overlays test_powersave_hold arm/arm_driver.elf
 
 # ARM926 instruction counts, original vs new, built like the EOSM firmware.
 # Needs the pinned toolchain on PATH (. ~/.local/opt/ml-env.sh) and the

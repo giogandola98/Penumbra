@@ -30,6 +30,138 @@ void powersave_permit()
     prop_request_change(PROP_ICU_AUTO_POWEROFF, &powersave_permit, 4);
 }
 
+/* Holds on Canon's CPU power save */
+/* ================================ */
+
+/* Canon's DisablePowerSave / EnablePowerSave are a nested counter that selects the idle mode of
+ * its PowerMgr task: > 0 = WFI at full clock, 0 = WFI at a lowered clock or, with the image
+ * engine unclocked, a self-refresh sleep that also stops the DryOS timers (so msleep and the
+ * seconds clock freeze until a key/MPU event wakes the CPU). Upstream ML disables it once at boot
+ * and never re-enables it. With CONFIG_POWERSAVE_HOLD, ML instead holds it only while a feature
+ * needs timers with nobody touching the camera (docs/analysis/powersave-hold.md). Without it the
+ * holds are only counted (same API for modules on every build) and the boot disable stays. */
+
+#include "powersave_hold.h"
+
+static struct ps_hold ps_holds;
+static struct semaphore * ps_hold_sem = 0;
+#ifdef CONFIG_POWERSAVE_HOLD
+static int ps_canon_disabled = 0;   /* ML's share of Canon's counter: never more than one */
+#endif
+
+void powersave_hold_init()
+{
+    if (!ps_hold_sem)
+        ps_hold_sem = create_named_semaphore("ps_hold", SEM_CREATE_UNLOCKED);
+}
+
+#define PS_OP_DROP      0
+#define PS_OP_TAKE      1
+#define PS_OP_SET_OFF   2
+#define PS_OP_SET_ON    3
+
+static int ps_hold_op(const char * who, int op)
+{
+    if (!ps_hold_sem)
+    {
+        DryosDebugMsg(0, 15, "[PS] %s(%s) before init", op & 1 ? "hold" : "release", who ? who : "?");
+        return -1;
+    }
+
+    take_semaphore(ps_hold_sem, 0);
+    int edge =
+        op == PS_OP_TAKE ? ps_hold_take(&ps_holds, who) :
+        op == PS_OP_DROP ? ps_hold_drop(&ps_holds, who) :
+                           ps_hold_set(&ps_holds, who, op == PS_OP_SET_ON);
+    int total = ps_holds.total;
+
+#ifdef CONFIG_POWERSAVE_HOLD
+    /* still under the semaphore: the Canon calls must happen in the same order as the edges */
+    if (edge == PS_HOLD_FIRST && !ps_canon_disabled)
+    {
+        call("DisablePowerSave");
+        ps_canon_disabled = 1;
+    }
+    else if (edge == PS_HOLD_LAST && ps_canon_disabled)
+    {
+        call("EnablePowerSave");
+        ps_canon_disabled = 0;
+    }
+#endif
+    give_semaphore(ps_hold_sem);
+
+    DryosDebugMsg(0, 15, "[PS] %s %s -> %d%s", op & 1 ? "hold" : "release", who ? who : "?", total,
+        edge == PS_HOLD_ERR ? " REFUSED" : "");
+    return edge == PS_HOLD_ERR ? -1 : 0;
+}
+
+int powersave_hold(const char * who)
+{
+    return ps_hold_op(who, PS_OP_TAKE);
+}
+
+int powersave_release(const char * who)
+{
+    return ps_hold_op(who, PS_OP_DROP);
+}
+
+void powersave_hold_set(const char * who, int on)
+{
+    /* unlocked pre-check, so task loops can call this every iteration for free;
+     * only this caller changes `who`'s count, and the locked path checks again */
+    if ((ps_hold_count(&ps_holds, who) > 0) == !!on)
+        return;
+    ps_hold_op(who, on ? PS_OP_SET_ON : PS_OP_SET_OFF);
+}
+
+int powersave_holders()
+{
+    return ps_holds.total;
+}
+
+int powersave_hold_count(const char * who)
+{
+    return ps_hold_count(&ps_holds, who);
+}
+
+static MENU_UPDATE_FUNC(ps_hold_display)
+{
+    char names[80] = "";
+    int len = 0;
+    for (int i = 0; i < PS_HOLD_SLOTS && len < (int) sizeof(names) - 1; i++)
+    {
+        struct ps_hold_slot * h = &ps_holds.slot[i];
+        if (!h->who) continue;
+        len += snprintf(names + len, sizeof(names) - len, h->n > 1 ? "%s%s x%d" : "%s%s",
+                        len ? ", " : "", h->who, h->n);
+    }
+
+    MENU_SET_VALUE("%d", ps_holds.total);
+    if (ps_holds.total)
+        MENU_SET_WARNING(MENU_WARN_INFO, "Held by: %s%s", names, ps_holds.overflow ? ", (unnamed)" : "");
+}
+
+static struct menu_entry ps_hold_menu[] = {
+    {
+        .name       = "Powersave holds",
+        .update     = ps_hold_display,
+        .icon_type  = IT_ALWAYS_ON,
+        .help       = "ML features currently keeping Canon's CPU power save off.",
+#ifdef CONFIG_POWERSAVE_HOLD
+        .help2      = "0 when idle: Canon may then lower the clock or deep-sleep.",
+#else
+        .help2      = "This build also disables CPU power save for the whole session.",
+#endif
+    },
+};
+
+static void ps_hold_menu_init()
+{
+    menu_add("Debug", ps_hold_menu, COUNT(ps_hold_menu));
+}
+
+INIT_FUNC("ps_hold", ps_hold_menu_init);
+
 /* Paused LiveView */
 /* =============== */
 
@@ -44,6 +176,7 @@ void PauseLiveView() // this should not include "display off" command
     if (LV_NON_PAUSED)
     {
         //~ ASSERT(DISPLAY_IS_ON);
+        powersave_hold("lv pause");
         int x = 1;
         BMP_LOCK(
             lv_zoom_before_pause = lv_dispsize;
@@ -52,6 +185,7 @@ void PauseLiveView() // this should not include "display off" command
             clrscr();
             lv_paused = 1;
         )
+        powersave_release("lv pause");
         ASSERT(LV_PAUSED);
     }
 }
@@ -67,6 +201,7 @@ int ResumeLiveView()
     if (MENU_MODE) return 0;
     if (LV_PAUSED)
     {
+        powersave_hold("lv resume");
         int x = 0;
         BMP_LOCK(
             prop_request_change_wait(PROP_LV_ACTION, &x, 4, 1000);
@@ -80,6 +215,7 @@ int ResumeLiveView()
         msleep(100);
 #endif
         ans = 1;
+        powersave_release("lv resume");
     }
     lv_paused = 0;
     idle_wakeup_reset_counters(-1357);

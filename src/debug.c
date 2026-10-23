@@ -18,6 +18,7 @@
 #include "console.h"
 #include "zebra.h"
 #include "shoot.h"
+#include "powersave.h"
 #include "cropmarks.h"
 #include "fw-signature.h"
 #include "lvinfo.h"
@@ -641,6 +642,8 @@ debug_loop_task( void* unused ) // screenshot, draw_prop
 #endif
 
         #ifdef FEATURE_SCREENSHOT
+        /* the 10 s countdown must not freeze in Canon's idle sleep */
+        powersave_hold_set("screenshot", screenshot_sec);
         if (screenshot_sec)
         {
             info_led_blink(1, 20, 1000-20-200);
