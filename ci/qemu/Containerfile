@@ -38,14 +38,14 @@ RUN git init -q qemu-eos \
 
 # Without .git, configure takes the tree as a release tarball (no submodule fetches).
 # System libfdt replaces the dtc submodule; slirp/capstone are not needed (no guest network, no disassembler).
-# QEMU 4.2 predates GCC 10+: -fcommon and --disable-werror keep it building with bookworm's GCC 12.
+# QEMU 4.2 predates GCC 12: --disable-werror keeps new warnings from failing the build. Do not add
+# -fcommon: vl.c's tentative definitions would then pull stubs/machine-init-done.o in and collide.
 WORKDIR /src/build
 RUN ../qemu-eos/configure --prefix=/opt/qemu-eos --target-list=arm-softmmu \
       --enable-plugins --enable-vnc --enable-fdt --disable-docs --disable-werror \
       --disable-gtk --disable-sdl --disable-vte --disable-curses --disable-opengl \
       --disable-slirp --disable-capstone --disable-libusb --disable-usb-redir \
       --disable-spice --disable-xen --disable-guest-agent \
-      --extra-cflags=-fcommon \
  && make -j"$(nproc)" \
  && make plugins \
  && mkdir -p /opt/qemu-eos/bin /opt/qemu-eos/plugins /opt/qemu-eos/include \

@@ -57,7 +57,7 @@ jobs:
 
   emulation:
     # Separate job so the slow QEMU image build never delays the firmware build.
-    # Plugin self-test always runs; EOSM scenarios only when ROMs are provisioned (docs/EMULATION.md).
+    # Plugin self-test always runs; camera scenarios (1100D, EOSM) only when ROMs are provisioned (docs/EMULATION.md).
     runs-on: linux-podman
     env:
       IMAGE: ml-qemu
@@ -81,3 +81,34 @@ jobs:
           podman image exists "$IMAGE:$tag" || podman build --network=host -t "$IMAGE:$tag" -f src-checkout/ci/qemu/Containerfile src-checkout/ci/qemu 2>&1 | tail -n 60
           podman image exists "$IMAGE:$tag"
           echo "image $IMAGE:$tag ready in $(( $(date +%s) - start ))s"
+
+      - name: Wakeup plugin self-test (no ROM needed)
+        run: |
+          start=$(date +%s)
+          podman run $SANDBOX --tmpfs /tmp -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .qemu-image-tag)" \
+              ci/qemu/selftest/selftest.sh emu-out/selftest
+          echo "self-test done in $(( $(date +%s) - start ))s"
+
+      - name: Camera scenarios (SKIPPED without ROMs)
+        env:
+          # Personal access token with only read:package (docs/EMULATION.md). Absent => job token, then SKIPPED.
+          ROM_TOKEN: ${{ secrets.ROM_TOKEN }}
+          JOB_TOKEN: ${{ github.token }}
+        run: |
+          start=$(date +%s)
+          # ci-emulation.sh builds ML (ml-ci image) only for cameras whose ROMs were fetched.
+          export CI_IMAGE="ml-ci:$(sha256sum src-checkout/ci/Containerfile | cut -c1-12)"
+          export QEMU_IMAGE="$IMAGE:$(cat .qemu-image-tag)" CI_CONTAINERFILE=src-checkout/ci/Containerfile
+          src-checkout/ci/qemu/ci-emulation.sh
+          echo "scenarios done in $(( $(date +%s) - start ))s"
+
+      - name: Upload emulation results
+        if: always()
+        run: |
+          # Results only: JSON, logs, tables, screenshots. ci-emulation.sh already removed anything ROM-like.
+          rm -rf emu-artifacts && mkdir -p emu-artifacts
+          if [ -d src-checkout/emu-out ]; then cp -r src-checkout/emu-out/. emu-artifacts/; fi
+          find emu-artifacts -type f \( -iname '*.bin' -o -iname '*.img' -o -iname '*.o' -o -iname '*.elf' -o -iname '*.so' \) -delete
+          find emu-artifacts -type f | sort
+          cat emu-artifacts/*/comparison.md 2>/dev/null || true
+          src-checkout/ci/upload-artifact.sh ml-optimized-emulation emu-artifacts
