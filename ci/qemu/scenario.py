@@ -183,8 +183,13 @@ def main():
             menu_end = os.path.getsize(log)
             result["menu_png"] = screenshot(mon, os.path.join(a.out, "menu.png"))
             # Close it again: ML's idle state must come back with no hold left (checked below).
-            monitor_cmd(mon, "sendkey delete")
-            time.sleep(3)
+            # MENU twice: on a fresh card the first press only dismisses ML's beta warning and
+            # the second closes the menu; without the warning the first closes it and the second
+            # opens Canon's menu, which ML does not hold. (Trash would reopen the ML menu.)
+            for _ in range(2):
+                monitor_cmd(mon, "sendkey m")
+                time.sleep(2)
+            time.sleep(2)
         if q.poll() is not None:
             raise RuntimeError("QEMU died during the run, code %s (see qemu.log)" % q.returncode)
         monitor_cmd(mon, "quit")
