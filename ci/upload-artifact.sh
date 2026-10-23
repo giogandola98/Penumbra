@@ -40,8 +40,8 @@ def call(method, url_or_path, body=None, headers=None, rpc=True):
 ids = {"workflow_run_backend_id": run_id, "workflow_job_run_backend_id": job_id, "name": name}
 res = call("POST", "CreateArtifact", dict(ids, version=4))
 if not res.get("ok"):
-    sys.exit("CreateArtifact failed: %r" % res)
-url = res["signed_upload_url"]
+    sys.exit("CreateArtifact failed, keys: %r" % sorted(res))
+url = res.get("signed_upload_url") or res["signedUploadUrl"]
 sep = "&" if "?" in url else "?"
 blockid = base64.b64encode(b"block-0001").decode()
 call("PUT", url + sep + "comp=block&blockid=" + urllib.parse.quote(blockid), blob, rpc=False)
