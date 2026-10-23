@@ -38,6 +38,9 @@ measure `MEASURE_S` (30 s) → screenshot `idle.png` → `quit`.
 For ML scenarios, after the window, the Trash key (`sendkey delete`) opens the ML menu → `menu.png`.
 `comparison.md` also reports, per scenario, Canon's last power-save counter (`[PM] … (Counter = n)`), ML's last hold
 total (`[PS] … -> n`) and the number of `pmSelfRefresh` messages.
+It also gives Canon's counter changes per second in the window (one `[PM]` line per change), the `[PM]` calls
+while the ML menu is open (`--menu-s`, 6 s) and, for the 1100D, samples of the counter in RAM (0x2B64) read
+through the monitor every ~0.5 s.
 Outputs per scenario in `emu-out/<CAM>/<scenario>/`: `wakeups.json`, `tasks.json`, `result.json`, `qemu.log`
 (DryosDebugMsg + task switches), screenshots; `emu-out/<CAM>/comparison.md` holds the table.
 

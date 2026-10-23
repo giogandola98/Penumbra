@@ -174,8 +174,8 @@ About 1.9 KB of it is `powersave.o` (bookkeeping, semaphore wrapper, Debug-menu 
   (Canon alone: never). The task switch preceding each is `clock_task`, whose `do_this_every_second()` calls
   `_prop_lv_lens_request_update()` once a second outside LiveView (`src/shoot.c:390`). Every `EnablePowerSave`
   restamps PowerMgr's "last" time and the deep sleep needs ≥ 1000 ticks without one, so this 1 Hz lens-info request
-  probably keeps the camera out of self-refresh even with ML's holds at 0. Follow-up (not in this change): skip the
-  request while the display is off / no ML consumer needs `lens_info` outside LV, then re-check with the PM model.
+  probably keeps the camera out of self-refresh even with ML's holds at 0. Fixed on branch `power/lens-poll`,
+  see *Follow-up: lens info poll outside LiveView* below.
 
 ### QEMU recipe (1100D.105)
 
@@ -212,3 +212,83 @@ Until then the PowerMgr mode-2 loop spins at 0xFF1EA818 in emulation (`docs/EMUL
 
 Hardware (only when the user says so): battery current/runtime at idle with LCD on and off, stock vs `full` vs
 photo; intervalometer and bulb timer accuracy with the display off; APO still fires at the configured time.
+
+## Follow-up: lens info poll outside LiveView (branch `power/lens-poll`)
+
+### Cause
+
+Outside LiveView Canon does not stream `PROP_LV_LENS` (focal length, focus distance, focus position). Upstream ML
+(f330c6136, 2018) therefore asked the MPU for it once a second from `clock_task` whenever LiveView was off and a
+lens was attached (`do_this_every_second()`, formerly `src/shoot.c:388-393` → `_prop_lv_lens_request_update()`,
+`src/lens.c`, `prop_request_change(PROP_LV_LENS, …)`). Each request is an MPU round trip; Canon brackets the
+SIO/MREQ traffic with `DisablePowerSave`/`EnablePowerSave` in `PropMgr`, so the counter toggled ~3.5×/s at idle and
+every `EnablePowerSave` restamped PowerMgr's "last" time, keeping the self-refresh sleep (≥ 1000 ticks quiet) out
+of reach even with ML's holds at 0.
+
+### Who uses the data outside LiveView
+
+| Consumer | Where | Visible when |
+|---|---|---|
+| Info bars (focal length) | `src/lens.c` `focal_len_update`, drawn by the menu at `src/menu.c:4806-4807` | ML menu open |
+| Focus → DOF Settings info (focal length, focus distance, hyperfocal, DOF near/far, diffraction) | `src/focus.c:255-332` (`display_lens_hyperfocal`, via `dof_info_update` `:335`) | ML menu open |
+| Flexinfo items (focal length, focus distance, DOF, hyperfocal) | `src/flexinfo.c:1691-1780` | Canon photo info screen, display on (`FEATURE_FLEXINFO`; not on 1100D) |
+| Lua `lens.focal_length`, `focus_distance`, `focus_pos`, `hyperfocal`, `dof_near`, `dof_far` | `modules/lua/lua_lens.c` | when a script reads them |
+| DOF computation | `src/focus.c:145` (`focus_calc_dof`, from `update_stuff` in the property handler) | derived, follows the above |
+
+LiveView-only users (focus-ring triggers in `_lens_dynamic_data_post_update`, movie log, silent-picture metadata,
+`mlv_rec`, rack/stack focus) get the property from Canon's own LiveView stream and are unaffected. Exposure
+features (ETTR, auto ISO, intervalometer, bulb) do not read these fields.
+
+### Fix
+
+`lens_info_poll_step()` (`src/lens.c`, called from `clock_task` every 200 ms, `src/shoot.c:431-435`) requests the
+update only while `lens_poll_wanted()` says a consumer exists:
+
+- LiveView off and a lens attached (as before), **and** one of
+- ML menu shown (`gui_menu_shown()`);
+- flexinfo screen visible (`DISPLAY_IS_ON && display_idle() && get_global_draw()`, only with `FEATURE_FLEXINFO`);
+- any ML power-save hold (`powersave_holders() > 0`): an ML activity runs (script, task, intervalometer, menu
+  action, bulb…) and may read `lens_info`; Canon is held anyway, so the extra toggles cost no sleep;
+- a Lua read of one of the dynamic fields in the last 10 s (`lens_info_want_fresh()`, `modules/lua/lua_lens.c`).
+
+The first request goes out as soon as a consumer appears (the next 200 ms tick, e.g. right after the menu opens),
+then once a second as before, so whatever is on screen is refreshed exactly as upstream. With nobody looking (Canon
+shooting screen without flexinfo, display off, playback) ML sends nothing. Same logic in every build (with or
+without `CONFIG_POWERSAVE_HOLD`); no new hold is needed. DIGIC 6/7 keep calling the (empty) request hook; DIGIC 8+
+is untouched.
+
+### Measurement (Forgejo CI, 1100D.105, 30 s idle window, ML menu opened for 6 s after it)
+
+`scenario.py` now reports Canon's counter changes per second (every Disable/Enable logs `[PM] … (Counter = n)`,
+so the count of those lines is exact), samples RAM 0x2B64 through the monitor every ~0.5 s as a cross-check, and
+counts `[PM]` calls while the ML menu is open (`--pm-counter-addr`, `--menu-s`; `run_cam.sh` passes 0x2B64 for the
+1100D).
+
+| scenario | [PM] changes/s at idle, before (run 37) | after (run 36) | [PM] calls with menu open, before / after | task sw/s before / after | IRQ/s before / after |
+|---|---:|---:|---:|---:|---:|
+| canon | 0 | 0 | – | 62 / 65 | 100 / 104 |
+| ml-full | 3.73 (112) | **0** | 45 / 45 | 332 / 336 | 110 / 108 |
+| ml-hold | 3.33 (100) | **0** | 46 / 46 | 298 / 329 | 101 / 106 |
+
+- At idle outside LiveView Canon's counter no longer changes at all with ML loaded: `ml-hold` sits at 0 for the
+  whole window (all 59 RAM samples 0), like Canon alone. The 0.5 s RAM samples never caught the old toggles (each
+  lasts a few ms), which is why the log count is the metric.
+- With the menu open the request rate is unchanged (45/46 `[PM]` calls in 6 s before and after): the visible
+  consumer still gets 1 Hz updates.
+- No regression in the other metrics: task switches/s, IRQ/s and the per-task rates are within run-to-run noise
+  (runner load differs between runs); the PC profile is unchanged (0xFF1EA9B4 for `ml-full`, 0xFF1EA818 for
+  `ml-hold`). The self-refresh sleep itself still needs the PM register model (QEMU recipe step 3).
+
+### Risks
+
+1. **Stale values outside LiveView when nobody is "looking".** A consumer not in the list sees the values from the
+   last refresh (menu, picture taken, LiveView). Known gaps: a Lua script that registers a `property.LV_LENS`
+   handler without holding power save or reading `lens.*` no longer gets 1 Hz events outside LiveView; the first
+   `lens.*` read of a script that holds nothing (e.g. from a key handler) returns the previous value, later reads
+   within 10 s are fresh. Running scripts and their tasks hold power save, so they are polled as before.
+2. **Flexinfo check is coarse.** On cameras with flexinfo the poll runs whenever the photo info screen is visible,
+   whether or not a lens item is configured; correct, just not minimal (no effect on the 1100D or EOSM, which is
+   always in LiveView when shooting).
+3. **Real hardware may toggle for other reasons** (other MPU traffic). QEMU shows none left at idle; confirm on the
+   camera with the DryosDebugMsg log before claiming the deep sleep is reached.
+
