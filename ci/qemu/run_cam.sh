@@ -100,7 +100,7 @@ run_scenario() {   # $1 = scenario; disk images and console output are per scena
         ml-photo) zip=$ML_ZIP_PHOTO;  boot=--boot ;;
         ml-hold)  zip=$ML_ZIP_HOLD;   boot=--boot ;;
         ml-hold-ivl|ml-photo-ivl)
-                  zip=$ML_ZIP_HOLD; [ "$sc" = ml-photo-ivl ] && zip=$ML_ZIP_PHOTO
+                  zip=${ML_ZIP_HOLD:-}; [ "$sc" = ml-photo-ivl ] && zip=$ML_ZIP_PHOTO
                   boot=--boot; seeds+=(--put "ML/SETTINGS/MAGIC.CFG:$work/ivl.cfg"); extra+=(--no-menu --active-hold intervalometer) ;;
     esac
     case $sc in ml-full|ml-photo|ml-hold) [ -n "$MENU_TOUR" ] && extra+=(--menu-tour "$MENU_TOUR") ;; esac
