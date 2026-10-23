@@ -13,6 +13,7 @@
 #   WARMUP_S, MEASURE_S         boot time excluded from, and length of, the measurement window (40, 30)
 #   TASKS=1        also count DryOS task switches with qemu-eos `-d tasks` (default 1)
 #   OUT            output dir (default emu-out/CAM)
+#   PARALLEL=0     run the scenarios one after the other (default 1: at once, if the host has the cores)
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
@@ -55,28 +56,52 @@ scenarios=(canon)
 [ -n "${ML_ZIP_FULL:-}" ] && scenarios+=(ml-full)
 [ -n "${ML_ZIP_PHOTO:-}" ] && scenarios+=(ml-photo)
 
-rc=0
-for sc in "${scenarios[@]}"; do
-    echo "== $CAM / $sc"
+run_scenario() {   # $1 = scenario; disk images and console output are per scenario, so runs can overlap
+    local sc=$1 zip boot seeds=()
     case $sc in
         canon)    zip=;               boot=   ;;
         ml-full)  zip=$ML_ZIP_FULL;   boot=--boot ;;
         ml-photo) zip=$ML_ZIP_PHOTO;  boot=--boot ;;
     esac
-    seeds=()
     if [ -n "$zip" ]; then      # see make_sd_image.py --seed: skip ML's first-boot ROM backup
         for r in ROM0 ROM1; do
             [ -f "$romdir/$r.BIN" ] && seeds+=(--seed "ML/LOGS/$r.BIN:$(stat -c %s "$romdir/$r.BIN")")
         done
     fi
-    python3 -I "$HERE/make_sd_image.py" "${seeds[@]}" "$ROOT/platform/sd.qcow2.xz" "$work/sd.img" ${zip:+"$zip"}
-    python3 -I "$HERE/make_sd_image.py" "$ROOT/platform/sd.qcow2.xz" "$work/cf.img" > /dev/null
+    python3 -I "$HERE/make_sd_image.py" "${seeds[@]}" "$ROOT/platform/sd.qcow2.xz" "$work/$sc-sd.img" ${zip:+"$zip"}
+    python3 -I "$HERE/make_sd_image.py" "$ROOT/platform/sd.qcow2.xz" "$work/$sc-cf.img" > /dev/null
+    local st=0
     python3 -I "$HERE/scenario.py" --cam "$CAM" --rom-dir "$ML_ROM_DIR" \
-        --sd "$work/sd.img" --cf "$work/cf.img" $boot --plugin "$PLUGIN" \
+        --sd "$work/$sc-sd.img" --cf "$work/$sc-cf.img" $boot --plugin "$PLUGIN" \
         ${debugmsg:+--debugmsg-addr "$debugmsg"} $([ "$TASKS" = 1 ] && echo --tasks) \
-        --warmup "$WARMUP_S" --measure "$MEASURE_S" --out "$OUT/$sc" || { echo "scenario $sc FAILED"; rc=1; }
-    rm -f "$work/sd.img" "$work/cf.img"
-done
+        --warmup "$WARMUP_S" --measure "$MEASURE_S" --out "$OUT/$sc" || st=$?
+    rm -f "$work/$sc-sd.img" "$work/$sc-cf.img"
+    return $st
+}
+
+# PARALLEL=1 (default): all scenarios at once. Each is a fixed wall-clock timeline (warmup + window) that
+# keeps one host core busy at most, so on a runner with a core per scenario the job takes one timeline
+# instead of one per scenario. QEMU-EOS-Optimized bench (docs/PERFORMANCE.md) checks that rates and
+# screenshots do not change. PARALLEL=0 runs them one after the other.
+rc=0
+if [ "${PARALLEL:-1}" = 1 ] && [ "$(nproc)" -ge "${#scenarios[@]}" ]; then
+    pids=()
+    for sc in "${scenarios[@]}"; do
+        mkdir -p "$OUT/$sc"
+        run_scenario "$sc" > "$OUT/$sc/console.txt" 2>&1 &
+        pids+=($!)
+    done
+    for i in "${!scenarios[@]}"; do
+        st=0; wait "${pids[$i]}" || st=$?
+        echo "== $CAM / ${scenarios[$i]} (parallel)"; cat "$OUT/${scenarios[$i]}/console.txt"
+        [ "$st" -eq 0 ] || { echo "scenario ${scenarios[$i]} FAILED"; rc=1; }
+    done
+else
+    for sc in "${scenarios[@]}"; do
+        echo "== $CAM / $sc"
+        run_scenario "$sc" || { echo "scenario $sc FAILED"; rc=1; }
+    done
+fi
 
 python3 -I "$HERE/compare.py" "$CAM" "$OUT" "${scenarios[@]}" | tee "$OUT/comparison.md"
 exit $rc
