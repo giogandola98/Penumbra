@@ -500,6 +500,13 @@ $(BUILD_DIR)/dietlibc.a: $(DIET_OBJS) | $(BUILD_DIR)
 	$(AR) cr $@ $^
 CFLAGS += $(CFLAGS_PLATFORM)
 
+# Counted CPU powersave holds instead of the permanent boot-time DisablePowerSave
+# (docs/analysis/powersave-hold.md). Opt-in: POWERSAVE_HOLD=y on the command line, or a
+# platform/profile default (EOSM photo profile). Any other value keeps upstream behaviour.
+ifeq ($(POWERSAVE_HOLD),y)
+CFLAGS += -DCONFIG_POWERSAVE_HOLD
+endif
+
 # Now a list of files we get from newlib.  Apparently the
 # dietlibc memcpy/memset caused hangs.  And newlib is faster.
 #

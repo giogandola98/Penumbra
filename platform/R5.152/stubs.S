@@ -55,16 +55,16 @@ THUMB_FN(0xe07ece36, _FIO_OpenFile)                         // Storage::Storage.
 THUMB_FN(0xe07ecef6, _FIO_CreateFile)                       // Storage::Storage.c Create
 THUMB_FN(0xe07ed068, _FIO_RemoveFile)                       // Storage::Storage.c Remove
 THUMB_FN(0xe07ed0fc, _FIO_ReadFile)                         // Storage::Storage.c Read
-THUMB_FN(0xe07ed51e,  FIO_SeekSkipFile)                     // Storage::Storage.c Search
+THUMB_FN(0xe07ed51e, _FIO_SeekSkipFile)                     // Storage::Storage.c Search
 THUMB_FN(0xe07ed5e4, _FIO_WriteFile)                        // Storage::Storage.c Write
-THUMB_FN(0xe07edd5a,  FIO_CloseFile)                        // Storage::Storage.c Close
+THUMB_FN(0xe07edd5a, _FIO_CloseFile)                        // Storage::Storage.c Close
 THUMB_FN(0xe07edf72, _FIO_GetFileSize64)                    // Storage::Storage.c AcqSize
 THUMB_FN(0xe07ee9a4, _FIO_RenameFile)                       // Storage::Storage.c Rename
 THUMB_FN(0xe07eedc8, _FIO_CreateDirectory)                  // Storage::Storage.c CreateDir
 THUMB_FN(0xe07ef0da,  FIO_Flush)                            // Storage::Storage.c Flush
 THUMB_FN(0xe07ef2bc, _FIO_FindFirstEx)                      // Storage::Storage.c FirstEnt
-THUMB_FN(0xe07ef3cc,  FIO_FindNextEx)                       // Storage::Storage.c NextEnt
-THUMB_FN(0xe07ef48c,  FIO_FindClose)                        // Storage::Storage.c CloseEnt
+THUMB_FN(0xe07ef3cc, _FIO_FindNextEx)                       // Storage::Storage.c NextEnt
+THUMB_FN(0xe07ef48c, _FIO_FindClose)                        // Storage::Storage.c CloseEnt
 
 /** Debug messages **/
 THUMB_FN(0xe0814a9c,  DryosDebugMsg)                        // Easy to catch in init task: "InitializeIntercom", "CreateSequencer"

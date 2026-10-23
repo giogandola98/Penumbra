@@ -384,14 +384,6 @@ static void do_this_every_second() // called every second
     }
     #endif
 
-    // DIGIC 8+ uses different props
-    #if defined(CONFIG_DIGIC_45) || defined(CONFIG_DIGIC_VI) || defined(CONFIG_DIGIC_VII)
-    /* update lens info outside LiveView */
-    if (!lv && lens_info.lens_exists)
-    {
-        _prop_lv_lens_request_update();
-    }
-    #endif
 }
 
 // called every 200ms or on request
@@ -435,6 +427,12 @@ seconds_clock_task( void* unused )
             do_this_every_second();
             prev_s_clock = seconds_clock;
         }
+
+        // DIGIC 8+ uses different props
+        #if defined(CONFIG_DIGIC_45) || defined(CONFIG_DIGIC_VI) || defined(CONFIG_DIGIC_VII)
+        /* lens info outside LiveView, only while someone needs it */
+        lens_info_poll_step();
+        #endif
 
         msleep(200);
     }
@@ -2726,6 +2724,9 @@ bulb_take_pic(int duration)
     }
     ml_taking_pic = 1;
 
+    /* the exposure is timed with msleep / get_ms_clock, which stop in Canon's deep idle sleep */
+    powersave_hold("bulb");
+
     printf("[BULB] taking picture @ %s %d.%d\" %s\n",
         lens_format_iso(lens_info.raw_iso),
         duration / 1000, (duration / 100) % 10,
@@ -2872,6 +2873,7 @@ bulb_take_pic(int duration)
     set_shooting_mode(m0r);
     msleep(200);
     
+    powersave_release("bulb");
     ml_taking_pic = 0;
 #endif
 
@@ -4933,6 +4935,8 @@ void movie_end()
 // AF is disabled (don't enable it here, it will only introduce weird bugs)
 void hdr_shot(int skip0, int wait)
 {
+    /* a sequence of shots with waits in between (bracketing, intervalometer, remote triggers) */
+    powersave_hold("hdr shot");
     NotifyBoxHide();
 #ifdef FEATURE_HDR_BRACKETING
     if (is_hdr_bracketing_enabled())
@@ -4958,6 +4962,7 @@ void hdr_shot(int skip0, int wait)
 
     lens_wait_readytotakepic(64);
     picture_was_taken_flag = 0;
+    powersave_release("hdr shot");
 }
 
 int remote_shot_flag = 0; // also in lcdsensor.c
@@ -5472,7 +5477,24 @@ shoot_task( void* unused )
     {
         int msg;
         int delay = 50;
-        
+
+        /* features that run from this task's timers while nobody touches the camera:
+         * keep Canon out of its timer-stopping idle sleep while they are on (powersave.h).
+         * Checked right before this task sleeps, after any change made in the last iteration. */
+        #ifdef FEATURE_INTERVALOMETER
+        powersave_hold_set("intervalometer", intervalometer_running);
+        #endif
+        #ifdef FEATURE_MOTION_DETECT
+        /* outside LV it only runs while half-shutter is held */
+        powersave_hold_set("motion detect", motion_detect && lv);
+        #endif
+        #ifdef FEATURE_AUDIO_REMOTE_SHOT
+        powersave_hold_set("audio remote", audio_release_running);
+        #endif
+        #ifdef FEATURE_LCD_SENSOR_REMOTE
+        powersave_hold_set("lcd remote", lcd_release_running);
+        #endif
+
         /* specify the maximum wait time */
         if(!DISPLAY_IS_ON)
         {
@@ -5628,6 +5650,8 @@ shoot_task( void* unused )
                 {
                     msleep(100);
                 }
+                /* 2 s countdown after half-shutter is released, then the exposure */
+                powersave_hold("bulb timer");
                 int m0 = shooting_mode;
                 wait_till_next_second();
                 NotifyBox(2000, "[2s] Bulb timer: %s", format_time_hours_minutes_seconds(d));
@@ -5637,6 +5661,7 @@ shoot_task( void* unused )
                 {
                     NotifyBox(2000, "Bulb timer canceled.");
                     info_led_off();
+                    powersave_release("bulb timer");
                     continue;
                 }
                 NotifyBox(2000, "[1s] Bulb timer: %s", format_time_hours_minutes_seconds(d));
@@ -5646,10 +5671,12 @@ shoot_task( void* unused )
                 {
                     NotifyBox(2000, "Bulb timer canceled.");
                     info_led_off();
+                    powersave_release("bulb timer");
                     continue;
                 }
                 info_led_off();
                 bulb_take_pic(d * 1000);
+                powersave_release("bulb timer");
             }
         }
         #endif
@@ -6076,6 +6103,21 @@ shoot_task( void* unused )
             if (gui_menu_shown() || get_halfshutter_pressed()) continue;
 
             /* last second - try to get slightly better timing */
+            #ifdef CONFIG_PROFILE_PHOTO
+            /* Sleep straight to the shot time instead of waking every 10 ms
+             * (up to 100 wakeups per shot). msleep is tick-quantised and may
+             * return a tick early, so the 10 ms loop below still finishes the
+             * wait; it now runs at most once or twice. Jitter is unchanged:
+             * the shot starts within one tick (10 ms) plus scheduling latency
+             * after the second boundary. ms_to_shot is <= 1000 here unless
+             * the loop above ended early (shutdown); the cap then leaves the
+             * rest of the wait to the old 10 ms loop, as before. */
+            int ms_to_shot = intervalometer_next_shot_time * 1000 - get_ms_clock();
+            if (ms_to_shot > 0)
+            {
+                msleep(MIN(ms_to_shot, 1000));
+            }
+            #endif
             while (SECONDS_REMAINING > 0)
             {
                 msleep(10);

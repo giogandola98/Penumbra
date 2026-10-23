@@ -32,9 +32,17 @@ static int console_buffer_index = 0;
 
 int console_visible = 0;
 
+#ifdef CONFIG_PROFILE_PHOTO
+/* console_task sleeps on this while the console is hidden */
+static struct semaphore * console_wake_sem = 0;
+#endif
+
 void console_show()
 {
     console_visible = 1;
+    #ifdef CONFIG_PROFILE_PHOTO
+    if (console_wake_sem) give_semaphore(console_wake_sem);
+    #endif
     redraw();
 }
 void console_hide()
@@ -289,12 +297,26 @@ static void
 console_task( void* unused )
 {
     console_init();
+    #ifdef CONFIG_PROFILE_PHOTO
+    console_wake_sem = create_named_semaphore("console_wake", SEM_CREATE_LOCKED);
+    #endif
     #ifdef CONSOLE_DEBUG
     console_show();
     #endif
     int dirty = 0;
     TASK_LOOP
     {
+        #ifdef CONFIG_PROFILE_PHOTO
+        /* Hidden and already erased: nothing to draw until console_show().
+         * console_visible is re-read after the wait, so a show() that races
+         * with this check is not lost (the semaphore counts it). */
+        if (!console_visible && !dirty)
+        {
+            take_semaphore(console_wake_sem, 0);
+            continue;
+        }
+        #endif
+
         // show the console only when there are no Canon dialogs on the screen
         if (console_visible && (display_idle() || is_pure_play_photo_or_movie_mode()))
         {
@@ -316,6 +338,13 @@ console_task( void* unused )
 }
 
 TASK_CREATE( "console_task", console_task, 0, 0x1d, 0x1000 );
+
+#ifdef CONFIG_PROFILE_PHOTO
+void console_wakeup_for_shutdown()
+{
+    if (console_wake_sem) give_semaphore(console_wake_sem);
+}
+#endif
 
 /* some functions from standard I/O */
 

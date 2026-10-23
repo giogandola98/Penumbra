@@ -55,6 +55,7 @@ extern void platform_post_init();
 #if defined(CONFIG_MMU_REMAP)
 #include "patch.h"
 #endif
+#include "powersave.h"
 
 static int _hold_your_horses = 1; // 0 after config is read
 int ml_started = 0; // 1 after ML is fully loaded
@@ -249,8 +250,11 @@ static void backup_region(char *file, uint32_t base, uint32_t length)
 
 static void backup_rom_task()
 {
+    /* low-priority file writes that may outlast the boot hold */
+    powersave_hold("rom backup");
     backup_region("ML/LOGS/ROM1.BIN", ROM1_ADDR, ROM1_SIZE);
     backup_region("ML/LOGS/ROM0.BIN", ROM0_ADDR, ROM0_SIZE);
+    powersave_release("rom backup");
 }
 #endif
 
@@ -475,7 +479,14 @@ static void my_big_init_task()
     uart_printf("hello from ML, before early tasks");
 #endif
 
+    /* Canon's boot also holds CPU power save off until its init completes. Upstream ML never
+     * re-enables it (af31890bc): msleep-driven features froze in Canon's deep idle sleep.
+     * CONFIG_POWERSAVE_HOLD builds hold it only while needed, starting with ML's own init. */
+    powersave_hold_init();
+#ifndef CONFIG_POWERSAVE_HOLD
     call("DisablePowerSave");
+#endif
+    powersave_hold("boot");
     _ml_cbr_init();
     menu_init();
     debug_init();
@@ -532,6 +543,7 @@ static void my_big_init_task()
 #endif
 
     ml_started = 1;
+    powersave_release("boot");
 }
 
 /** Blocks execution until config is read */

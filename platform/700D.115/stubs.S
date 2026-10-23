@@ -44,11 +44,11 @@ NSTUB(0xFF0C5408,  init_task)
 NSTUB(   0x26CE8,  additional_version)                      /** Find the additional version string in GUI_GetFirmVersion */
 
 /** File I/O **/
-NSTUB(0xFF34545C,  FIO_CloseFile)
-NSTUB(0xFF346454,  FIO_FindClose)
-NSTUB(0xFF346374,  FIO_FindNextEx)
+NSTUB(0xFF34545C,  _FIO_CloseFile)
+NSTUB(0xFF346454,  _FIO_FindClose)
+NSTUB(0xFF346374,  _FIO_FindNextEx)
 NSTUB(0xFF34520C, _FIO_ReadFile)
-NSTUB(0xFF3452BC,  FIO_SeekSkipFile)
+NSTUB(0xFF3452BC,  _FIO_SeekSkipFile)
 NSTUB(0xFF3453AC, _FIO_WriteFile)
 NSTUB(0xFF345CB8, _FIO_CreateDirectory)
 NSTUB(0xFF3450B8, _FIO_CreateFile)

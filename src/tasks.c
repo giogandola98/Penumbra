@@ -333,6 +333,26 @@ static void leds_on()
 /* to refactor with CBR */
 extern int module_shutdown();
 
+#ifdef CONFIG_PROFILE_PHOTO
+/* Tasks using IDLE_WAIT_MS() wait forever; wake them so their TASK_LOOP
+ * sees ml_shutdown_requested and exits, as it did after a timeout. */
+static void tasks_wakeup_for_shutdown()
+{
+    extern void menu_wakeup_for_shutdown();
+    extern void notifybox_wakeup_for_shutdown();
+    extern void focus_task_wakeup_for_shutdown();
+    extern void console_wakeup_for_shutdown();
+    menu_wakeup_for_shutdown();
+    notifybox_wakeup_for_shutdown();
+    focus_task_wakeup_for_shutdown();   /* also focus_misc_task */
+    console_wakeup_for_shutdown();
+#if defined(CONFIG_MODULES)
+    extern void module_task_wakeup_for_shutdown();
+    module_task_wakeup_for_shutdown();
+#endif
+}
+#endif
+
 static void ml_shutdown()
 {
 #ifdef CONFIG_RP
@@ -355,6 +375,10 @@ static void ml_shutdown()
     extern struct semaphore *log_disk_sem;
     if (log_disk_sem != NULL)
         give_semaphore(log_disk_sem);
+#endif
+
+#ifdef CONFIG_PROFILE_PHOTO
+    tasks_wakeup_for_shutdown();
 #endif
 
     restore_af_button_assignment_at_shutdown();

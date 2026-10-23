@@ -52,17 +52,17 @@ DATA_PTR(   0x27990,  task_max)
 // File I/O
 THUMB_FN(0xfe265d0e, _FIO_CreateFile)
 THUMB_FN(0xfe265c88, _FIO_OpenFile)
-THUMB_FN(0xfe265fc4,  FIO_CloseFile)
+THUMB_FN(0xfe265fc4,  _FIO_CloseFile)
 THUMB_FN(0xfe265e04, _FIO_ReadFile)
 THUMB_FN(0xfe265f40, _FIO_WriteFile)
-THUMB_FN(0xfe265e84,  FIO_SeekSkipFile)
+THUMB_FN(0xfe265e84,  _FIO_SeekSkipFile)
 THUMB_FN(0xfe266104, _FIO_GetFileSize)
 THUMB_FN(0xfe265d88, _FIO_RemoveFile)
 THUMB_FN(0xfe2663b2, _FIO_RenameFile) // FIO_RenameFile_Success
 THUMB_FN(0xfe26643c, _FIO_CreateDirectory)
 THUMB_FN(0xfe266712, _FIO_FindFirstEx)
-THUMB_FN(0xfe2667b2,  FIO_FindNextEx)
-THUMB_FN(0xfe266848,  FIO_FindClose) // This is FIO_FindCloseEx really, but it seems similar enough
+THUMB_FN(0xfe2667b2,  _FIO_FindNextEx)
+THUMB_FN(0xfe266848, _FIO_FindClose) // This is FIO_FindCloseEx really, but it seems similar enough
 THUMB_FN(0xfe266500,  FIO_Flush)
 
 // Debug messages

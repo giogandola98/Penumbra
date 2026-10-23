@@ -55,12 +55,12 @@ THUMB_FN(0xe04d7270, _FIO_ReadFile)               // FIO_ReadFile
 THUMB_FN(0xe04d7dd4,  FIO_Flush)                  // FIO_Flush
 THUMB_FN(0xe04d7cb0, _FIO_CreateDirectory)        // FIO_CreateDirectory
 THUMB_FN(0xe04d7224, _FIO_RemoveFile)             // FIO_RemoveFile
-THUMB_FN(0xe04d7388,  FIO_CloseFile)              // FIO_CloseFile
-THUMB_FN(0xe04d8172,  FIO_FindNextEx)             // FIO_FindNextEx
-THUMB_FN(0xe04d80ba,  FIO_FindClose)              // FIO_FindClose
+THUMB_FN(0xe04d7388, _FIO_CloseFile)              // FIO_CloseFile
+THUMB_FN(0xe04d8172, _FIO_FindNextEx)             // FIO_FindNextEx
+THUMB_FN(0xe04d80ba, _FIO_FindClose)              // FIO_FindClose
 THUMB_FN(0xe04d7316, _FIO_WriteFile)              // FIO_WriteFile
 THUMB_FN(0xe04d7b2a, _FIO_RenameFile)             // FIO_RenameFile
-THUMB_FN(0xe04d8894,  FIO_SeekSkipFile)           // FIO_SeekSkipFile, via debug prints in xref sources
+THUMB_FN(0xe04d8894, _FIO_SeekSkipFile)           // FIO_SeekSkipFile, via debug prints in xref sources
 
 /** Bitmap **/
 DATA_PTR(   0x10128,  bmp_vram_info)                        /* first YUV VRAM buffer, used right after DISP_SetUpdateOSDVram */

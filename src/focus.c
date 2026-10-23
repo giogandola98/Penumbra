@@ -520,6 +520,14 @@ focus_stack(
 #endif
 
 static struct semaphore * focus_task_sem;
+
+/* Without trap focus, focus_misc_task has nothing to poll: it only plots the
+ * focus graph after PROP_LV_FOCUS_DATA. The photo profile wakes it from that
+ * property instead of polling at 10 Hz. */
+#if defined(CONFIG_PROFILE_PHOTO) && !defined(FEATURE_TRAP_FOCUS) && !defined(CONFIG_70D)
+#define FOCUS_MISC_EVENT_DRIVEN
+static struct semaphore * focus_misc_sem = 0;
+#endif
 static int focus_task_dir_n_speedx;
 static int focus_task_delta;
 static int focus_rack_delta;
@@ -745,8 +753,8 @@ focus_task( void* unused )
 {
     TASK_LOOP
     {
-        int err = take_semaphore( focus_task_sem, 500 );
-        if (err) continue;
+        int err = take_semaphore( focus_task_sem, IDLE_WAIT_MS(500) );
+        if (err || WOKEN_FOR_SHUTDOWN()) continue;
         
         while (lens_info.job_state) msleep(100);
 
@@ -809,6 +817,16 @@ focus_task( void* unused )
 
 TASK_CREATE( "focus_task", focus_task, 0, 0x18, 0x1000 );
 
+#ifdef CONFIG_PROFILE_PHOTO
+void focus_task_wakeup_for_shutdown()
+{
+    if (focus_task_sem) give_semaphore(focus_task_sem);
+    #ifdef FOCUS_MISC_EVENT_DRIVEN
+    if (focus_misc_sem) give_semaphore(focus_misc_sem);
+    #endif
+}
+#endif
+
 static MENU_UPDATE_FUNC(follow_focus_print)
 {
     if (follow_focus) MENU_SET_VALUE(
@@ -848,13 +866,15 @@ int get_focus_graph()
 }
 
 static int lv_focus_confirmation = 0;
-static int hsp_countdown = 0;
+/* get_ms_clock() of the last half-shutter change; a timestamp instead of a
+ * countdown, so no task has to tick it down */
+static int hsp_time = 0;
 int can_lv_trap_focus_be_active()
 {
 #ifdef CONFIG_LV_FOCUS_INFO
     //~ bmp_printf(FONT_MED, 100, 100, "LVTF 0 lv=%d hsc=%d dof=%d sm=%d gs=%d sp=%d mf=%d",lv,hsp_countdown,dofpreview,shooting_mode,gui_state,get_silent_pic_mode(),is_manual_focus());
     if (!lv) return 0;
-    if (hsp_countdown) return 0; // half-shutter can be mistaken for DOF preview, but DOF preview property triggers a bit later
+    if (get_ms_clock() - hsp_time < 300) return 0; // half-shutter can be mistaken for DOF preview, but DOF preview property triggers a bit later
     if (dofpreview) return 0;
     if (is_movie_mode()) return 0;
     if (gui_state != GUISTATE_IDLE) return 0;
@@ -873,7 +893,7 @@ PROP_HANDLER(PROP_HALF_SHUTTER)
 {
     if (buf[0] && !hsp) movie_af_reverse_dir_request = 1;
     hsp = buf[0];
-    hsp_countdown = 3;
+    hsp_time = get_ms_clock();
     #ifdef FEATURE_MAGIC_ZOOM
     if (get_zoom_overlay_trigger_mode() <= 2) zoom_overlay_set_countdown(0);
     #endif
@@ -938,6 +958,10 @@ static int maxmagf = 1;
 
 static void update_focus_mag(int mag)
 {
+    #ifdef FOCUS_MISC_EVENT_DRIVEN
+    /* give only on the clean->dirty edge, so the count stays bounded */
+    if (!focus_graph_dirty && focus_misc_sem) give_semaphore(focus_misc_sem);
+    #endif
     focus_graph_dirty = 1;
     focus_value_raw = mag;
     int maxmag = 1;
@@ -1019,11 +1043,24 @@ void plot_focus_mag(){};
 static void
 focus_misc_task(void* unused)
 {
+    #ifdef FOCUS_MISC_EVENT_DRIVEN
+    focus_misc_sem = create_named_semaphore("focus_misc_sem", SEM_CREATE_LOCKED);
+    /* an update that came before the semaphore existed could not wake us;
+     * clearing the flag makes the next one give it */
+    focus_graph_dirty = 0;
+    #endif
+
     TASK_LOOP
     {
+        #ifdef FOCUS_MISC_EVENT_DRIVEN
+        take_semaphore(focus_misc_sem, 0);
+        if (ml_shutdown_requested) break;
+        /* clear first: an update that arrives while plotting gives the semaphore again */
+        focus_graph_dirty = 0;
+        if (get_focus_graph()) plot_focus_mag();
+        msleep(100);    /* keep the old 10 Hz cap on graph redraws */
+        #else
         msleep(100);
-        
-        if (hsp_countdown) hsp_countdown--;
 
         if (focus_graph_dirty && get_focus_graph()) 
         {
@@ -1047,6 +1084,7 @@ focus_misc_task(void* unused)
             while (CURRENT_GUI_MODE == GUIMODE_FOCUS_MODE) msleep(100);
             #endif
         }
+        #endif // FOCUS_MISC_EVENT_DRIVEN
     }
 }
 

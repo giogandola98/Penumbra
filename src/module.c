@@ -2201,8 +2201,8 @@ static void module_load_task(void* unused)
     TASK_LOOP
     {
         int msg;
-        int err = msg_queue_receive(module_mq, (struct event**)&msg, 200);
-        if (err) continue;
+        int err = msg_queue_receive(module_mq, (struct event**)&msg, IDLE_WAIT_MS(200));
+        if (err || WOKEN_FOR_SHUTDOWN()) continue;
         
         switch(msg & 0xFFFF)
         {
@@ -2246,6 +2246,14 @@ void module_save_configs()
         }
     }
 }
+
+#ifdef CONFIG_PROFILE_PHOTO
+/* module_task waits forever; a dummy message makes it see ml_shutdown_requested */
+void module_task_wakeup_for_shutdown()
+{
+    if (module_mq) msg_queue_post(module_mq, 0);
+}
+#endif
 
 /* clean shutdown, unlink lockfile */
 int module_shutdown()

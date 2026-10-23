@@ -27,6 +27,8 @@ ML_PROFILE ?= photo
 ifeq ($(ML_PROFILE),photo)
     CFLAGS_PLATFORM += -DCONFIG_PROFILE_PHOTO
     MODULES_INCLUDED = modules-photo.included
+    # CPU powersave held only while needed (docs/analysis/powersave-hold.md); POWERSAVE_HOLD=n to opt out
+    POWERSAVE_HOLD ?= y
     # video-only code: bitrate hacks, audio codec, FPS override, movie tweaks, crop mode
     ML_SRC_OBJS_EXCLUDE =
 else ifeq ($(ML_PROFILE),full)

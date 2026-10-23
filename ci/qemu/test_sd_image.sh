@@ -16,7 +16,8 @@ with zipfile.ZipFile(sys.argv[1], "w") as z:
     z.writestr("ML/README", b"readme")
 PY
 
-python3 -I "$HERE/make_sd_image.py" --seed ML/LOGS/ROM1.BIN:4096 \
+printf 'interval.enabled = 1\r\n' > "$OUT/preset.cfg"
+python3 -I "$HERE/make_sd_image.py" --seed ML/LOGS/ROM1.BIN:4096 --put "ML/SETTINGS/MAGIC.CFG:$OUT/preset.cfg" \
     "$ROOT/platform/sd.qcow2.xz" "$OUT/sd.img" "$OUT/dummy.zip" | tee "$OUT/make.log"
 
 off=$(sed -n 's/.*FAT at offset \([0-9]*\).*/\1/p' "$OUT/make.log")
@@ -28,9 +29,10 @@ assert data == b"\x00dummy-autoexec" * 100, "autoexec.bin read back differs"
 PY
 mdir -i "$OUT/sd.img@@$off" -b ::/ML/modules | grep -qi 'dummy.mo'
 [ "$(mtype -i "$OUT/sd.img@@$off" ::/ML/LOGS/ROM1.BIN | wc -c)" = 4096 ]
+mtype -i "$OUT/sd.img@@$off" ::/ML/SETTINGS/MAGIC.CFG | cmp - "$OUT/preset.cfg"
 grep -q "'EOS_DEVELOP': True" "$OUT/make.log" || echo "note: base image has no EOS_DEVELOP flag"
 
 # Canon-only card: base image without ML.
 python3 -I "$HERE/make_sd_image.py" "$ROOT/platform/sd.qcow2.xz" "$OUT/plain.img" > /dev/null
-rm -f "$OUT"/*.img "$OUT/autoexec.readback"
+rm -f "$OUT"/*.img "$OUT/autoexec.readback" "$OUT/preset.cfg"
 echo "sd image tooling OK"

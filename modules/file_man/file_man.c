@@ -516,6 +516,7 @@ static void FileCopyOrMove(int op)
 MFILE_SEM (
     /* this may take a long time - prevent powersaving from interrupting us */
     powersave_prohibit();
+    powersave_hold("file copy");
 
     char fname[FIO_MAX_PATH_LENGTH];
     char tmpdst[FIO_MAX_PATH_LENGTH];
@@ -571,6 +572,7 @@ MFILE_SEM (
         ScanDir(gPath);
     }
 
+    powersave_release("file copy");
     powersave_permit();
 )
 }

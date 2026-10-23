@@ -67,18 +67,18 @@ THUMB_FN(0xE006C3B8,  vsnprintf)                       // prints "!!! ERROR !!!\
 /** File I/O **/
 THUMB_FN(0xE0584BDE, _FIO_CreateFile)
 THUMB_FN(0xE0584B2C, _FIO_OpenFile)
-THUMB_FN(0xE0585362,  FIO_CloseFile)
+THUMB_FN(0xE0585362,  _FIO_CloseFile)
 THUMB_FN(0xE0584FB6, _FIO_ReadFile)
 THUMB_FN(0xE058514E, _FIO_WriteFile)
-THUMB_FN(0xE0585090,  FIO_SeekSkipFile)                // renamed to FIO_SeekSkipFile but seems to have same functionality as FIO_SeekSkipFile. TODO: check!
+THUMB_FN(0xE0585090, _FIO_SeekSkipFile)                // renamed to FIO_SeekSkipFile but seems to have same functionality as FIO_SeekSkipFile. TODO: check!
 // THUMB_FN(0xE05854FC, _FIO_GetFileSize)                 // renamed to FIO_AcquireFileSize and was probably called FIO_GetFileSize64 on older models.
 THUMB_FN(0xE05854FC, _FIO_GetFileSize64)                 // renamed to FIO_AcquireFileSize and was probably called FIO_GetFileSize64 on older models.
 THUMB_FN(0xE0584F1E, _FIO_RemoveFile)
 THUMB_FN(0xE0585F5E, _FIO_RenameFile)
 THUMB_FN(0xE05863D2, _FIO_CreateDirectory)
 THUMB_FN(0xE0586840, _FIO_FindFirstEx)
-THUMB_FN(0xE0586936,  FIO_FindNextEx)
-THUMB_FN(0xE05869F8,  FIO_FindClose)
+THUMB_FN(0xE0586936,  _FIO_FindNextEx)
+THUMB_FN(0xE05869F8,  _FIO_FindClose)
 // THUMB_FN(0xE05865B6,  FIO_Flush)                       // to be called after FIO_CloseFile?
 
 /** GUI **/

@@ -48,11 +48,11 @@ NSTUB(0xFF0193C0,  init_task)                               // passed as arg to 
 NSTUB(   0x250D4,  additional_version)
 
 /** File I/O **/
-NSTUB(0xFF1CA3FC,  FIO_CloseFile)
-NSTUB(0xFF1CB3CC,  FIO_FindClose)                           // called with ret_FIO_FindFirstEx after finishing the dir scanning loop
-NSTUB(0xFF1CB2EC,  FIO_FindNextEx)
+NSTUB(0xFF1CA3FC,  _FIO_CloseFile)
+NSTUB(0xFF1CB3CC, _FIO_FindClose)                           // called with ret_FIO_FindFirstEx after finishing the dir scanning loop
+NSTUB(0xFF1CB2EC,  _FIO_FindNextEx)
 NSTUB(0xFF1CA1AC, _FIO_ReadFile)
-NSTUB(0xFF1CA25C,  FIO_SeekSkipFile)                        /* present on 5D3.113, EOSM.202 */
+NSTUB(0xFF1CA25C, _FIO_SeekSkipFile)                        /* present on 5D3.113, EOSM.202 */
 NSTUB(0xFF1CA34C, _FIO_WriteFile)
 NSTUB(0xFF1CAC38, _FIO_CreateDirectory)
 NSTUB(0xFF1CA058, _FIO_CreateFile)

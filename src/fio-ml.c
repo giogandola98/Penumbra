@@ -6,9 +6,33 @@
 #include "beep.h"
 #include "config.h"
 #include "fio-ml.h"
+#include "powersave.h"
 
 #if defined(MODULE)
     #error "Module builds shouldn't use fio-ml.c directly!  Call the exports of ML!"
+#endif
+
+/* Power-save hold around every card operation.
+ *
+ * Canon runs its own card I/O inside DisablePowerSave brackets (FileWriter/FileReader jobs,
+ * FileMgr, capture jobs); the raw FIO stubs ML calls do not. With ML's holds at 0, PowerMgr may
+ * enter the self-refresh sleep (every clock gated, SD controller and DMA included) while an ML
+ * task waits for an SD transfer, freezing it until the next key or MPU wake. So each FIO_* entry
+ * point holds for the duration of the call only: never per open file, because files left open
+ * (trace logs, Lua scripts) must not keep the camera awake. Nested calls (FIO_CreateFile ->
+ * is_dir -> FIO_FindFirstEx) just nest the hold. The release restamps PowerMgr's idle timer,
+ * so there is also no sleep right after I/O.
+ *
+ * All builds: without CONFIG_POWERSAVE_HOLD the holds are only counted (no change for `full`).
+ * The installer has no hold API and keeps Canon's power save disabled itself.
+ * powersave_hold_try() skips the hold before ML init, in interrupts and with IRQs masked.
+ * See docs/analysis/powersave-hold.md, "File I/O and deep sleep". */
+#ifdef CONFIG_INSTALLER
+static inline int fio_hold(void) { return 0; }
+static inline void fio_release(int held) { (void) held; }
+#else
+static inline int fio_hold(void) { return powersave_hold_try("fio"); }
+static inline void fio_release(int held) { if (held) powersave_release("fio"); }
 #endif
 
 #define CARD_DRIVE_INIT(_letter, _type) { .drive_letter = _letter, .type = _type,  .cluster_size = 0, .free_space_raw = 0, .file_number = 0, .folder_number = 0, }
@@ -378,7 +402,9 @@ FILE* FIO_OpenFile(const char* filename, unsigned mode )
 
     fixup_filename(new_filename, filename, sizeof(new_filename));
     
+    int held = fio_hold();
     FILE* f = _FIO_OpenFile(new_filename, mode);
+    fio_release(held);
     
     if (f != PTR_INVALID)
     {
@@ -398,7 +424,10 @@ int FIO_GetFileSize(const char * filename, uint32_t * size)
     }
 
     fixup_filename(new_filename, filename, sizeof(new_filename));
-    return _FIO_GetFileSize(new_filename, size);
+    int held = fio_hold();
+    int ans = _FIO_GetFileSize(new_filename, size);
+    fio_release(held);
+    return ans;
 }
 
 int _FIO_RemoveFile(const char * filename);
@@ -411,7 +440,10 @@ int FIO_RemoveFile(const char * filename)
     }
 
     fixup_filename(new_filename, filename, sizeof(new_filename));
-    return _FIO_RemoveFile(new_filename);
+    int held = fio_hold();
+    int ans = _FIO_RemoveFile(new_filename);
+    fio_release(held);
+    return ans;
 }
 
 struct fio_dirent * _FIO_FindFirstEx(const char * dirname, struct fio_file * file);
@@ -424,7 +456,47 @@ struct fio_dirent * FIO_FindFirstEx(const char * dirname, struct fio_file * file
     }
 
     fixup_filename(new_dirname, dirname, sizeof(new_dirname));
-    return _FIO_FindFirstEx(new_dirname, file);
+    int held = fio_hold();
+    struct fio_dirent * dirent = _FIO_FindFirstEx(new_dirname, file);
+    fio_release(held);
+    return dirent;
+}
+
+/* Canon stubs, wrapped only for the power-save hold */
+int _FIO_FindNextEx(struct fio_dirent * dirent, struct fio_file * file);
+int FIO_FindNextEx(struct fio_dirent * dirent, struct fio_file * file)
+{
+    int held = fio_hold();
+    int ans = _FIO_FindNextEx(dirent, file);
+    fio_release(held);
+    return ans;
+}
+
+void _FIO_FindClose(struct fio_dirent * dirent);
+void FIO_FindClose(struct fio_dirent * dirent)
+{
+    int held = fio_hold();
+    _FIO_FindClose(dirent);
+    fio_release(held);
+}
+
+void _FIO_CloseFile(FILE * stream);
+void FIO_CloseFile(FILE * stream)
+{
+    /* writes the directory entry: card I/O like any other */
+    int held = fio_hold();
+    _FIO_CloseFile(stream);
+    fio_release(held);
+}
+
+int64_t _FIO_SeekSkipFile(FILE * stream, int64_t position, int whence);
+int64_t FIO_SeekSkipFile(FILE * stream, int64_t position, int whence)
+{
+    /* may walk the FAT chain */
+    int held = fio_hold();
+    int64_t ans = _FIO_SeekSkipFile(stream, position, whence);
+    fio_release(held);
+    return ans;
 }
 
 // This func allows a module to get the cam to alloc space,
@@ -479,7 +551,10 @@ int FIO_CreateDirectory(const char * dirname)
 
     fixup_filename(new_dirname, dirname, sizeof(new_dirname));
     if (is_dir(new_dirname)) return 0;
-    return _FIO_CreateDirectory(new_dirname);
+    int held = fio_hold();
+    int ans = _FIO_CreateDirectory(new_dirname);
+    fio_release(held);
+    return ans;
 }
 
 #if defined(CONFIG_FIO_RENAMEFILE_WORKS)
@@ -498,7 +573,10 @@ int FIO_RenameFile(const char * src, const char * dst)
     }
     fixup_filename(newSrc, src, FIO_MAX_PATH_LENGTH);
     fixup_filename(newDst, dst, FIO_MAX_PATH_LENGTH);
-    return _FIO_RenameFile(newSrc, newDst);
+    int held = fio_hold();
+    int ans = _FIO_RenameFile(newSrc, newDst);
+    fio_release(held);
+    return ans;
 }
 #else
 int FIO_RenameFile(const char * src, const char * dst)
@@ -524,7 +602,10 @@ static unsigned _GetFileSize(char* filename)
     {
         return -1;
     }
-    if( _FIO_GetFileSize( filename, &size ) != 0 )
+    int held = fio_hold();
+    int err = _FIO_GetFileSize( filename, &size );
+    fio_release(held);
+    if (err != 0)
         return 0xFFFFFFFF;
     return size;
 }
@@ -620,7 +701,11 @@ FILE* FIO_CreateFile(const char* name)
         return NULL;
     }
     fixup_filename(new_name, name, sizeof(new_name));
-    return _FIO_CreateFileEx(new_name);
+    /* one hold for remove + create + missing dirs */
+    int held = fio_hold();
+    FILE * f = _FIO_CreateFileEx(new_name);
+    fio_release(held);
+    return f;
 }
 
 /* Canon stubs */
@@ -646,13 +731,18 @@ int FIO_ReadFile( FILE* stream, void* ptr, size_t count )
             return 0;
         }
         ASSERT(stream != NULL) // no sensible way to return error given how we use it
+        int held = fio_hold();
         int ans = _FIO_ReadFile(stream, ubuf, count);
+        fio_release(held);
         memcpy(ptr, ubuf, count);
         free(ubuf);
         return ans;
     }
 
-    return _FIO_ReadFile(stream, ptr, count);
+    int held = fio_hold();
+    int ans = _FIO_ReadFile(stream, ptr, count);
+    fio_release(held);
+    return ans;
 }
 
 // Data written may not read back until the file has been closed and re-opened.
@@ -676,7 +766,10 @@ int FIO_WriteFile( FILE* stream, const void* ptr, size_t count )
     // the DMA engine will work directly on the uncacheable data.
     // We've just flushed cache above, so the window for inconsistency is small,
     // and we should never be making the situation worse.
-    return _FIO_WriteFile(stream, UNCACHEABLE(ptr), count);
+    int held = fio_hold();
+    int ans = _FIO_WriteFile(stream, UNCACHEABLE(ptr), count);
+    fio_release(held);
+    return ans;
 }
 
 FILE* FIO_CreateFileOrAppend(const char* name)
@@ -699,6 +792,8 @@ FILE* FIO_CreateFileOrAppend(const char* name)
     return f;
 }
 
+static int fio_copy_file(const char * src, const char * dst);
+
 int FIO_CopyFile(const char * src, const char * dst)
 {
     if (src == NULL)
@@ -709,6 +804,15 @@ int FIO_CopyFile(const char * src, const char * dst)
     {
         return -1;
     }
+    /* one bracket for the whole copy (the calls below nest in it) */
+    int held = fio_hold();
+    int err = fio_copy_file(src, dst);
+    fio_release(held);
+    return err;
+}
+
+static int fio_copy_file(const char * src, const char * dst)
+{
     FILE* f = FIO_OpenFile(src, O_RDONLY | O_SYNC);
     if (!f) return -1;
 
@@ -717,7 +821,13 @@ int FIO_CopyFile(const char * src, const char * dst)
 
     const int bufsize = MIN(FIO_GetFileSize_direct(src), 128*1024);
     void* buf = fio_malloc(bufsize);
-    if (!buf) return -1;
+    if (!buf)
+    {
+        FIO_CloseFile(f);
+        FIO_CloseFile(g);
+        FIO_RemoveFile(dst);
+        return -1;
+    }
 
     int err = 0;
     int r = 0;
