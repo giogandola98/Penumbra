@@ -24,20 +24,20 @@ jobs:
           # Content-addressed tag: unchanged Containerfile => podman reuses cached layers/image.
           tag=$(sha256sum src-checkout/ci/Containerfile | cut -c1-12)
           echo "$tag" > .image-tag
-          podman image exists "$IMAGE:$tag" || podman build -q -t "$IMAGE:$tag" -f src-checkout/ci/Containerfile src-checkout/ci
+          podman image exists "$IMAGE:$tag" || podman build --network=host -q -t "$IMAGE:$tag" -f src-checkout/ci/Containerfile src-checkout/ci
 
       - name: Build EOSM.202 (FATAL_WARNINGS=y)
         run: |
-          podman run --rm -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/build.sh
+          podman run --rm --network=none --security-opt label=disable -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/build.sh
 
       - name: Host tests
         run: |
-          podman run --rm -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/host-tests.sh
+          podman run --rm --network=none --security-opt label=disable -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/host-tests.sh
 
       - name: cppcheck (report only)
         continue-on-error: true
         run: |
-          podman run --rm -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/cppcheck.sh
+          podman run --rm --network=none --security-opt label=disable -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/cppcheck.sh
 
       - name: Collect artifacts
         if: always()
@@ -48,7 +48,6 @@ jobs:
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: ml-optimized-eosm202
-          path: artifacts/
+        run: |
+          # The host executor has no node, so JS actions (upload-artifact) cannot run; speak the v3 protocol directly.
+          src-checkout/ci/upload-artifact.sh ml-optimized-eosm202 artifacts
