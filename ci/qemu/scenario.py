@@ -45,7 +45,11 @@ def monitor_cmd(path, cmd, timeout=10.0):
 
 def screenshot(mon, out_png):
     ppm = out_png[:-4] + ".ppm"
-    monitor_cmd(mon, "screendump " + ppm)
+    try:
+        monitor_cmd(mon, "screendump " + ppm)
+    except OSError as e:
+        print("screenshot failed: %s" % e, file=sys.stderr)
+        return None
     for _ in range(50):                           # screendump completes asynchronously
         if os.path.exists(ppm) and os.path.getsize(ppm) > 0:
             break
@@ -125,6 +129,7 @@ def main():
     with open(log, "wb") as logf:
         q = subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL, stdout=logf, stderr=subprocess.STDOUT)
     result = {"cam": a.cam, "boot_ml": a.boot, "warmup_s": a.warmup, "measure_s": a.measure}
+    log_start = log_end = 0
     try:
         for _ in range(100):
             if os.path.exists(mon) or q.poll() is not None:
@@ -139,10 +144,20 @@ def main():
         time.sleep(max(0, a.warmup + a.measure - (time.time() - t0)))
         log_end = os.path.getsize(log)
         result["idle_png"] = screenshot(mon, os.path.join(a.out, "idle.png"))
+        if a.boot:
+            # After the window, so it cannot skew the metrics: open the ML menu (Trash = Delete key
+            # in qemu-eos) and capture it.
+            monitor_cmd(mon, "sendkey delete")
+            time.sleep(3)
+            result["menu_png"] = screenshot(mon, os.path.join(a.out, "menu.png"))
         if q.poll() is not None:
             raise RuntimeError("QEMU died during the run, code %s (see qemu.log)" % q.returncode)
         monitor_cmd(mon, "quit")
         q.wait(timeout=30)
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+        # Keep going: the log and whatever the plugin wrote are the evidence of what went wrong.
+        result["error"] = str(e)
+        print("ERROR: %s" % e, file=sys.stderr)
     finally:
         if q.poll() is None:
             q.kill()
@@ -167,12 +182,16 @@ def main():
         result["task_switches_per_s"] = round(sum(tasks.values()) / a.measure, 2)
         result["top_tasks"] = sorted(tasks.items(), key=lambda kv: -kv[1])[:8]
     text = open(log, "rb").read().decode(errors="replace")
-    result["ml_detected"] = bool(re.search(r"Magic Lantern|magiclantern|ml_init|autoexec\.bin", text))
+    if "Assertion" in text or "qemu-system-arm: " in text:
+        tail = [l for l in text.splitlines() if "Assertion" in l or "MEMTX" in l or "qemu-system-arm:" in l]
+        result["qemu_errors"] = tail[-5:]
+    # ML's own DryOS tasks show up in the task-switch log once autoexec.bin runs.
+    result["ml_detected"] = bool(re.search(r"\b(ml_init|menu_task|shoot_task|livev_hiprio_task|clock_task)\b", text))
     result["log_lines"] = text.count("\n")
     with open(os.path.join(a.out, "result.json"), "w") as f:
         json.dump(result, f, indent=1)
     print(json.dumps(result))
-    if not summary or not summary.get("seconds"):
+    if result.get("error") or not summary or not summary.get("seconds"):
         print("no plugin summary for the measurement window", file=sys.stderr)
         sys.exit(1)
 

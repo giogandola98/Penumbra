@@ -61,7 +61,13 @@ for sc in "${scenarios[@]}"; do
         ml-full)  zip=$ML_ZIP_FULL;   boot=--boot ;;
         ml-photo) zip=$ML_ZIP_PHOTO;  boot=--boot ;;
     esac
-    python3 -I "$HERE/make_sd_image.py" "$ROOT/platform/sd.qcow2.xz" "$work/sd.img" ${zip:+"$zip"}
+    seeds=()
+    if [ -n "$zip" ]; then      # see make_sd_image.py --seed: skip ML's first-boot ROM backup
+        for r in ROM0 ROM1; do
+            [ -f "$romdir/$r.BIN" ] && seeds+=(--seed "ML/LOGS/$r.BIN:$(stat -c %s "$romdir/$r.BIN")")
+        done
+    fi
+    python3 -I "$HERE/make_sd_image.py" "${seeds[@]}" "$ROOT/platform/sd.qcow2.xz" "$work/sd.img" ${zip:+"$zip"}
     python3 -I "$HERE/make_sd_image.py" "$ROOT/platform/sd.qcow2.xz" "$work/cf.img" > /dev/null
     python3 -I "$HERE/scenario.py" --cam "$CAM" --rom-dir "$ML_ROM_DIR" \
         --sd "$work/sd.img" --cf "$work/cf.img" $boot --plugin "$PLUGIN" \

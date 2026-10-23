@@ -16,7 +16,8 @@ with zipfile.ZipFile(sys.argv[1], "w") as z:
     z.writestr("ML/README", b"readme")
 PY
 
-python3 -I "$HERE/../make_sd_image.py" "$ROOT/platform/sd.qcow2.xz" "$OUT/sd.img" "$OUT/dummy.zip" | tee "$OUT/make.log"
+python3 -I "$HERE/../make_sd_image.py" --seed ML/LOGS/ROM1.BIN:4096 \
+    "$ROOT/platform/sd.qcow2.xz" "$OUT/sd.img" "$OUT/dummy.zip" | tee "$OUT/make.log"
 
 off=$(sed -n 's/.*FAT at offset \([0-9]*\).*/\1/p' "$OUT/make.log")
 mtype -i "$OUT/sd.img@@$off" ::/autoexec.bin > "$OUT/autoexec.readback"
@@ -26,6 +27,7 @@ data = open(sys.argv[1], "rb").read()
 assert data == b"\x00dummy-autoexec" * 100, "autoexec.bin read back differs"
 PY
 mdir -i "$OUT/sd.img@@$off" -b ::/ML/modules | grep -qi 'dummy.mo'
+[ "$(mtype -i "$OUT/sd.img@@$off" ::/ML/LOGS/ROM1.BIN | wc -c)" = 4096 ]
 grep -q "'EOS_DEVELOP': True" "$OUT/make.log" || echo "note: base image has no EOS_DEVELOP flag"
 
 # Canon-only card: base image without ML.

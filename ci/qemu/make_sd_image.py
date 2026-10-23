@@ -5,9 +5,14 @@ Replaces platform/create_disk_image_from_zip.py in CI: that script needs guestmo
 appliance), which a confined rootless container cannot run. Here the qcow2 is converted to raw with
 qemu-img and files are copied into the FAT partition with mtools, all as an unprivileged user.
 
-Usage: make_sd_image.py BASE_QCOW2_XZ OUT_IMG [ML_ZIP]
+Usage: make_sd_image.py [--seed CARD_PATH:SIZE]... BASE_QCOW2_XZ OUT_IMG [ML_ZIP]
 Without ML_ZIP the card is the plain base image (Canon firmware only scenario).
+--seed writes a zero-filled file of SIZE bytes at CARD_PATH (e.g. ML/LOGS/ROM1.BIN:16777216). run_cam.sh
+uses it so ML's first-boot ROM backup finds "existing" backups of the right size and does not run: it would
+add a long CPU burst to the measured idle window (a real camera does it once), and on qemu-eos models without
+a ROM0 mapping it aborts QEMU. The files hold zeros, never ROM content.
 """
+import argparse
 import lzma
 import os
 import shutil
@@ -44,10 +49,13 @@ def boot_flags(img, off):
 
 
 def main():
-    if len(sys.argv) not in (3, 4):
-        raise SystemExit(__doc__)
-    base, out = sys.argv[1], sys.argv[2]
-    ml_zip = sys.argv[3] if len(sys.argv) == 4 else None
+    ap = argparse.ArgumentParser(usage=__doc__)
+    ap.add_argument("--seed", action="append", default=[])
+    ap.add_argument("base")
+    ap.add_argument("out")
+    ap.add_argument("ml_zip", nargs="?")
+    a = ap.parse_args()
+    base, out, ml_zip = a.base, a.out, a.ml_zip
 
     with tempfile.TemporaryDirectory() as tmp:
         qcow = os.path.join(tmp, "sd.qcow2")
@@ -74,6 +82,20 @@ def main():
             entries = [os.path.join(files, e) for e in sorted(os.listdir(files))]
             subprocess.run(["mcopy", "-i", img, "-s", "-o", "-Q"] + entries + ["::/"],
                            env=env, check=True)
+        for spec in a.seed:
+            path, size = spec.rsplit(":", 1)
+            parts = path.strip("/").split("/")
+            if ".." in parts:
+                raise SystemExit("bad seed path %s" % path)
+            for i in range(1, len(parts)):
+                subprocess.run(["mmd", "-i", img, "::/" + "/".join(parts[:i])], env=env,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            zero = os.path.join(tmp, "zero")
+            with open(zero, "wb") as f:
+                f.truncate(int(size, 0))
+            subprocess.run(["mcopy", "-i", img, "-o", "-Q", zero, "::/" + "/".join(parts)],
+                           env=env, check=True)
+            os.remove(zero)
 
     flags = boot_flags(out, off)
     print("sd image: %s (FAT at offset %d, boot flags %s)" % (out, off, flags))

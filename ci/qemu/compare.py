@@ -31,8 +31,9 @@ def main():
     print("|---|---:|---:|---:|---:|---:|---:|---|---:|")
     for sc, r in rows:
         w = r.get("wakeups") if r else None
-        if not w or not w.get("seconds"):
-            print("| %s | FAILED | | | | | | | |" % sc)
+        if not w or not w.get("seconds") or (r and r.get("error")):
+            why = (r.get("error") or "; ".join(r.get("qemu_errors", []))) if r else "no result"
+            print("| %s | FAILED: %s | | | | | | | |" % (sc, why.replace("|", "/")[:120]))
             continue
         delta = (w["wakeups_per_s"] - base["wakeups_per_s"]) if base else None
         print("| %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
