@@ -1,0 +1,4 @@
+# QEMU image used by the `emulation` job: built, self-tested (wakeups plugin, 1100D smoke boot) and
+# published by root/QEMU-EOS-Optimized CI into the private <private-org> registry. Pinned by digest.
+# Update: copy the last line of that CI run's "Publish image" step. Source: QEMU-EOS-Optimized @ 7d35841dd853
+<forgejo-server>/<private-org>/qemu-eos@sha256:cedf8677c61a88a6c842cdd07fb61ae90f972eda60fa3c8afca9b7da4e8f87b5

@@ -3,7 +3,7 @@
 #   canon     Canon firmware only (camera bootflag off, card without ML)
 #   ml-full   upstream-equivalent ML build (ML_PROFILE=full)        if ML_ZIP_FULL is set
 #   ml-photo  this fork's photo build (ML_PROFILE=photo, EOSM only)  if ML_ZIP_PHOTO is set
-# Runs inside the ml-qemu image. Without ROMs it prints SKIPPED and exits 0.
+# Runs inside the qemu-eos image pinned in ci/qemu-image.txt. Without ROMs it prints SKIPPED and exits 0.
 #
 # Environment:
 #   CAM            camera model as qemu-eos names it (default EOSM; e.g. 1100D). ML platform dir is
@@ -45,7 +45,9 @@ rm -rf "$OUT" && mkdir -p "$OUT"
 work=$(mktemp -d)                      # disk images: rebuilt per scenario, never uploaded
 trap 'rm -rf "$work"' EXIT
 
-PLUGIN=$("$HERE/build-plugin.sh" "$work")
+# The wakeups plugin ships in the QEMU-EOS-Optimized image (ci/qemu-image.txt), built with its QEMU.
+PLUGIN=${PLUGIN:-/opt/qemu-eos/plugins/libwakeups.so}
+[ -f "$PLUGIN" ] || { echo "no wakeups plugin at $PLUGIN (wrong image?)" >&2; exit 2; }
 debugmsg=$(sed -n 's/^NSTUB( *\(0x[0-9A-Fa-f]*\), *DryosDebugMsg).*/\1/p' "$PLAT/stubs.S" | head -1)
 echo "CAM=$CAM platform=${plats[0]} DryosDebugMsg=${debugmsg:-unknown} qemu-eos=$(cat /opt/qemu-eos/QEMU_EOS_SHA 2>/dev/null || echo ?)"
 
