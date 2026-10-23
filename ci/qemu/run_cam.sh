@@ -60,6 +60,11 @@ echo "CAM=$CAM platform=${plats[0]} DryosDebugMsg=${debugmsg:-unknown} qemu-eos=
 # Canon's power-save counter in RAM (docs/firmware/1100D-powersave.md), sampled during the window.
 # Deep sleep (selfRefresh) is modelled by qemu-eos for the 1100D only.
 case "$CAM" in 1100D) pmctr=0x2B64; DISPLAY_OFF_S=${DISPLAY_OFF_S:-30} ;; *) pmctr=; DISPLAY_OFF_S=${DISPLAY_OFF_S:-0} ;; esac
+# Port bring-up: log the GUI events behind each emulated key in the canon scenario (scenario.py --probe-keys).
+case "$CAM" in 4000D) PROBE_KEYS=${PROBE_KEYS-m,m,delete,i,i,q,q,p,p,spc,a,up,down,left,right,z,x} ;; *) PROBE_KEYS=${PROBE_KEYS-} ;; esac
+
+# Stubs against their ROM evidence (tools/check_stubs.py; skipped for platforms without an evidence file).
+python3 -I "$ROOT/tools/check_stubs.py" "$PLAT" "$romdir/ROM1.BIN" | tee "$OUT/stubs-check.txt" || { echo "stub check FAILED"; exit 1; }
 
 scenarios=(canon)
 [ -n "${ML_ZIP_FULL:-}" ] && scenarios+=(ml-full)
@@ -74,7 +79,7 @@ printf '%s\r\n' "interval.enabled = 1" "interval.time = 600" "interval.start.tim
 run_scenario() {   # $1 = scenario; disk images and console output are per scenario, so runs can overlap
     local sc=$1 zip boot seeds=() extra=()
     case $sc in
-        canon)    zip=;               boot=   ;;
+        canon)    zip=;               boot=; [ -n "$PROBE_KEYS" ] && extra+=(--probe-keys "$PROBE_KEYS") ;;
         ml-full)  zip=$ML_ZIP_FULL;   boot=--boot ;;
         ml-photo) zip=$ML_ZIP_PHOTO;  boot=--boot ;;
         ml-hold)  zip=$ML_ZIP_HOLD;   boot=--boot ;;

@@ -1,7 +1,9 @@
 #ifndef _cameraspecific_gui_h_
 #define _cameraspecific_gui_h_
 
-// BGMT Button codes as received by gui_main_task
+// BGMT Button codes as received by gui_main_task.
+// 4000D: same button layout as the 1300D (Av/Erase share one key); codes taken from the 1300D and
+// checked in emulation with the key probe of ci/qemu/scenario.py (docs/PORT-4000D.md).
 #define BGMT_MENU 6
 #define BGMT_INFO 7
 #define BGMT_PRESS_DISP 8
@@ -44,7 +46,7 @@
 
 #define INT_EV_OBJ (*(int*)(event->obj))
 
-#define BGMT_TRASH (0xD) // not present on 1300D
+#define BGMT_TRASH (0xD) // Erase, shared with Av
 
 #define BGMT_WHEEL_LEFT 0x2
 #define BGMT_WHEEL_RIGHT 0x3

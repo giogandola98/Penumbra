@@ -15,15 +15,15 @@ _FIO_OpenFile        fn callers=80 calledby=0xFE0EFD74
 _FIO_CreateFile      fn callers=50 calledby=0xFE2345A0
 _FIO_RemoveFile      fn callers=30 calledby=0xFE242FEC
 _FIO_ReadFile        fn callers=60 calledby=0xFE233660
-FIO_SeekSkipFile     fn callers=40 calledby=0xFE21CAAC
+_FIO_SeekSkipFile     fn callers=40 calledby=0xFE21CAAC
 _FIO_WriteFile       fn callers=100 calledby=0xFE2345A0
-FIO_CloseFile        fn callers=150 calledby=0xFE0EFD74
+_FIO_CloseFile        fn callers=150 calledby=0xFE0EFD74
 _FIO_GetFileSize     fn callers=50 calledby=0xFE0F0888
 _FIO_RenameFile      fn callers=10
 _FIO_CreateDirectory fn callers=5 calledby=0xFE46CC40
 _FIO_FindFirstEx     fn callers=30 calledby=0xFE0EF88C
-FIO_FindNextEx       fn callers=30 calledby=0xFE0EF88C
-FIO_FindClose        fn callers=50 calledby=0xFE0EF88C
+_FIO_FindNextEx       fn callers=30 calledby=0xFE0EF88C
+_FIO_FindClose        fn callers=50 calledby=0xFE0EF88C
 
 # GUI
 gui_main_struct      litin=gui_main_task

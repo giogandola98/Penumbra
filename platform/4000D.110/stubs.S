@@ -41,11 +41,11 @@ NSTUB(0xFE11F190, init_task)                               // literal at 0xFE0C3
 NSTUB(   0x64E1C, additional_version)                      // GUI_GetFirmVersion (0xFE2B64DC) aligned with the 1100D one: literal...
 
 /** File I/O **/
-NSTUB(0xFE27C718, FIO_CloseFile)                           // 0.97 shape match; FIO block keeps 1300D spacing (Open +0x460)
-NSTUB(0xFE27D374, FIO_FindClose)                           // 0.97 shape match
-NSTUB(0xFE27D294, FIO_FindNextEx)                          // 0.98 shape match
+NSTUB(0xFE27C718, _FIO_CloseFile)                          // 0.97 shape match; FIO block keeps 1300D spacing (Open +0x460)
+NSTUB(0xFE27D374, _FIO_FindClose)                          // 0.97 shape match
+NSTUB(0xFE27D294, _FIO_FindNextEx)                         // 0.98 shape match
 NSTUB(0xFE27C4C8, _FIO_ReadFile)                           // 0.86 match; called by FR_SyncReadFile
-NSTUB(0xFE27C578, FIO_SeekSkipFile)                        // same size as 1100D (208), 1300D spacing Read+0xB0, called by FR_Syn...
+NSTUB(0xFE27C578, _FIO_SeekSkipFile)                       // same size as 1100D (208), 1300D spacing Read+0xB0, called by FR_Syn...
 NSTUB(0xFE27C668, _FIO_WriteFile)                          // 0.86 match; called by FW_SyncWriteFileFromBuffer
 NSTUB(0xFE27CEF0, _FIO_CreateDirectory)                    // called by FIO_CreateDirectory and FIO_SetFileAttributes, as on 1100D
 NSTUB(0xFE27C374, _FIO_CreateFile)                         // 0.98 shape match, Open+0xBC as on 1300D
