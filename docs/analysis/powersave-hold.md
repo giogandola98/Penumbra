@@ -99,6 +99,8 @@ the shutter or an MPU message drives wakes the CPU by itself; LiveView and movie
 | `lua task` | `modules/lua/lua_task.c:55`, `:68` | every `task.create` task of a script, for its whole life | pair |
 | `lua events` | `modules/lua/lua.c:302-304`, `:358` | any loaded script handles the periodic `shoot_task` or `seconds_clock` event | level |
 | `file copy` | `modules/file_man/file_man.c:519`, `:575` | file manager copy/move | pair |
+| `fio` | `src/fio-ml.c`, every `FIO_*` entry point | the duration of one card operation (open, create, read, write, close, seek, find, mkdir, rename, remove, size; one bracket for a whole `FIO_CopyFile`) | pair (per call) |
+| `sd overclock` | `modules/sd_clock/sd_uhs.c` (end of init), `sd_pll.c` (`apply_selected_clock`) | SD overclock applied at module load (default OFF); never released | pair (never released) |
 
 "Level" holders are re-evaluated each time their task runs (`powersave_hold_set`); "pair" holders bracket the
 activity.
@@ -134,7 +136,8 @@ activity.
    `EnablePowerSave` restamps Canon's "last" time, so the deep sleep cannot start for ≥ 1000 ticks after ML's last
    release, and flags set from other tasks are set while a held activity (menu, menu action) is still running.
 6. **Task context only.** Calling the API from an interrupt or a timer callback would block on the semaphore.
-   Nothing does today; the header says so.
+   Nothing does today; the header says so. The FIO wrappers, which any context may reach, use
+   `powersave_hold_try()` instead (see *File I/O and deep sleep*).
 7. **Unbalanced module code.** A module that releases more than it held is refused (logged `REFUSED`); one that
    leaks keeps the camera at mode 1 (= upstream behaviour). Neither crashes Canon.
 
@@ -292,3 +295,121 @@ counts `[PM]` calls while the ML menu is open (`--pm-counter-addr`, `--menu-s`; 
 3. **Real hardware may toggle for other reasons** (other MPU traffic). QEMU shows none left at idle; confirm on the
    camera with the DryosDebugMsg log before claiming the deep sleep is reached.
 
+
+## File I/O and deep sleep (branch `power/sd-safe`)
+
+### What happens to the SD card in the self-refresh sleep (1100D 1.0.5 RE)
+
+Summary of a separate reverse-engineering pass over the 1100D firmware (text search of the decompilation and of the
+ROM1 literal pools; EOSM not covered):
+
+- **The card stays powered.** `selfRefresh` (0xFF01DB50) never touches the card power GPIO (0xC02200A4, pins
+  0xC02200A8..BC), the SD controller (0xC0C10000), the SD DMA (0xC0510000), the SD PLL (0xC04000BC) or the card LED.
+  It saves CLOCK_ENABLE (0xC0400008), writes 0 (which also stops the SD card and controller clocks, bits 28 and 3)
+  and writes the saved value back on wake. PowerMgr sends no suspend/resume event to any driver.
+- **A stopped SD clock is the card's normal idle state.** Canon's SD driver opens the clock gate before every
+  command and closes it after (about 28 enable / 27 disable call sites in the driver), so between commands the card
+  already sits powered, selected and clock-stopped, which is what the sleep leaves it in.
+- **Nothing re-initialises the card after the wake**, and nothing needs to: card power, RCA, bus width, open handles
+  and the FAT/dir cache (in DRAM, which self-refresh keeps) survive. The card is re-initialised only by the driver's
+  error recovery (`SD_ReConfiguration`: power cycle, re-identify, clock, bus width; block level, no unmount), card
+  insertion and shutdown. There is no idle card power-off timer.
+- **Canon never sleeps with card I/O in flight; ML could.** The `_FIO_*` functions ML calls only switch the card LED
+  and call the file system; neither they nor the SD driver call `DisablePowerSave`. Canon brackets I/O at the job
+  level instead (FileReader/FileWriter sync jobs, FileMgr/FileCache jobs, movie file start, capture jobs, PTP). An ML
+  task waiting for an SD transfer lets the low-priority PowerMgr run; with the counter at 0, the image engine off and
+  at least 1000 ticks since the last stamp it calls `selfRefresh`, which stops the controller and DMA clocks under
+  the transfer. DryOS timers stop too, so the driver's timeout cannot fire; the transfer resumes after the next key
+  or MPU wake. Probably no corruption, but the write stays in flight for an unbounded time (a battery pull in that
+  window is worse than usual), and stopping the clock in the middle of a data block is card-dependent.
+- If a body did cut card power in sleep, the next command would fail and the driver's own recovery would
+  re-initialise the card below the FAT layer; only data of the interrupted command would be at risk.
+
+### Design
+
+1. **`fio` hold per card operation** (`src/fio-ml.c`). Every `FIO_*` entry point (open, create, read, write, close,
+   seek, find first/next/close, mkdir, rename, remove, get size) takes `powersave_hold_try("fio")` around the Canon
+   stub and releases it before returning, on every path. Compound helpers (`FIO_CreateFile` with its remove/mkdir
+   walk, `FIO_CopyFile`) hold once around the whole operation, and the calls inside nest. Everything built on them
+   (`read_file`, `read_entire_file`, `save_mem_to_file`, `dump_big_seg`, `my_fprintf`, `FIO_CreateFileOrAppend`,
+   `FIO_MoveFile`, config save, module/font loading, Lua `io`, file_man, trace, raw video writers) is covered without
+   a change of its own. `FIO_CloseFile`, `FIO_SeekSkipFile`, `FIO_FindNextEx` and `FIO_FindClose` used to be the
+   Canon stubs themselves; the stubs are now `_FIO_*` in every `platform/*/stubs.S` and the old names are wrappers,
+   so modules keep linking against the same names.
+   - **Per call, never per open file.** A file left open (a trace log, a Lua script's handle) must not pin the
+     camera awake; between calls nothing is in flight.
+   - **Cost.** ML's total is usually 0 at idle, so a call costs one Disable/Enable pair at Canon (the same pair
+     Canon's own jobs take) plus two `[PS]` log lines; nested or concurrent calls only count. The release restamps
+     PowerMgr's idle timer, which also gives at least 1000 ticks of grace after the last I/O. Raw video writes (MB per
+     call) do not notice it.
+   - **Contexts.** `powersave_hold_try()` (`src/powersave.c`) takes the hold only where `powersave_hold()` is
+     allowed and returns whether it did; the wrapper releases only then. It skips before `powersave_hold_init()`
+     (early boot: `_find_ml_card`, font loading), in interrupts (DryOS interrupt nesting level, as in
+     `get_current_task_name()`; DryOS timer callbacks run there) and with IRQs masked (CPSR.I), where waiting for the
+     semaphore could never end. Skipping is safe: such a caller keeps the CPU busy, so PowerMgr cannot idle under it.
+     Audit: no ML file I/O runs from a timer callback or an ISR today (crash logs, screenshots and config saves run in
+     tasks); the check is a guard, not a known path.
+   - **All builds.** It is correct everywhere and only counts without `CONFIG_POWERSAVE_HOLD`, so `full` (permanent
+     disable) behaves exactly as before. The installer (`CONFIG_INSTALLER`) has no hold API and keeps Canon's power
+     save disabled itself, so the wrapper is a no-op there. The unmaintained `minimal/` targets call the stubs
+     directly and are not built; `src/minimal-d78X.c` maps `FIO_CloseFile` to the stub like its other FIO calls.
+2. **Long-lived open files** (the only handles kept across idle periods):
+   - `mlv_play` used to open `mlv_play.log` through `trace` at module load and keep it for the whole session; it now
+     starts the trace when playback starts and stops it at the end.
+   - The `trace` writer closes its file after 2 s without new data and reopens it (append) when data comes, so the
+     directory entry (size) is on the card while the camera idles. Its writes are held by `FIO_WriteFile`.
+     (`trace.c` also builds again: it used `struct task` internals.)
+   - **Lua:** `io` goes through `__libc_open/read/write/close` (`modules/lua/lua/ml-lua-shim.c`) onto the wrapped
+     `FIO_*`, so every write that reaches the card is held for its duration. A script that leaves a file open is safe
+     with respect to the sleep: the handle survives it and no I/O is pending while nothing is written. Data still in
+     the C library buffer (up to 1 KiB) reaches the card only on `:flush()`, `:close()` or garbage collection; a
+     simple script's files are closed by `lua_close` (`__gc`) when it ends, a background script's when it calls
+     `:close()`. Scripts that log over a long time should flush per record (`logger.lua` uses `setvbuf("line")`):
+     a battery pull loses the unflushed tail, a sleep does not. No code change needed.
+   - Others (`raw_rec.txt`/`mlv_snd.txt` with tracing on, default off; the disk log on 7D2/M6II/200D; dev-tool logs)
+     write through `FIO_WriteFile` and are covered by the per-call hold.
+3. **`sd_clock`** (default OFF on every camera: `sd.sd_overclock` = 0, `sd.SD_PLL_clock_choice` = 0 = 48 MHz
+   stock). Whether the overclock survives the sleep is unverified: on DIGIC 4 (`sd_pll.c`, 1100D/60D) Canon never
+   rewrites 0xC04000BC after boot and `selfRefresh` does not touch it, but the PLL handshake around the sleep is not
+   understood; on DIGIC 5 (`sd_uhs.c`, EOSM and others) the UHS timing registers 0xC04006xx are applied from a hook in
+   Canon's SD setup path, which no wake runs. So when the overclock is applied the module takes
+   `powersave_hold("sd overclock")` and never releases it: only users who opted in lose the deep sleep, until the
+   EOSM sleep path is reverse engineered (then: re-check and re-apply after a wake instead).
+
+### Verification
+
+- `make -C tests/host`: `test_fio_hold` compiles `src/fio-ml.c` unchanged against `tests/host/fio_shim/` (fake
+  headers) with fake Canon stubs and a fake hold API. It drives every entry point and helper through success,
+  failure and early-return paths (missing dirs, failed copy, failed buffer allocation, NULL arguments, cacheable and
+  uncacheable buffers) and checks that every stub call happens under a `fio` hold, that holds and releases pair up
+  after every call, that nesting happens (create, then `is_dir`, then find), and that nothing is released when the
+  hold cannot be taken. Mutations (dropping the hold in `FIO_CloseFile`, dropping the release in `FIO_CopyFile`)
+  fail it.
+- Builds with `FATAL_WARNINGS=y`: EOSM.202 photo and full, 1100D.105 default and `POWERSAVE_HOLD=y`; modules
+  `trace`, `mlv_play`, `sd_clock`, `lua`.
+
+| autoexec.bin | before (`power/lens-poll`) | after | Δ |
+|---|---:|---:|---:|
+| EOSM.202 photo | 428,256 | 429,088 | +832 |
+| EOSM.202 full | 460,160 | 461,056 | +896 |
+| 1100D.105 (default / `POWERSAVE_HOLD=y`) | 449,856 | 450,688 | +832 |
+
+- QEMU (`ci/qemu/scenario.py`, ML scenarios with the DryosDebugMsg log): the run fails unless ML's holds are 0 at
+  the end of the idle window and again after the ML menu is closed, and `[PS] hold fio` appears (config, fonts and
+  modules are read at boot) with as many `release fio` as holds. `comparison.md` prints the counts.
+  **Pending:** a config save triggered from the menu (it needs a menu change to make the config dirty; the harness
+  only sends blind keys), and the SD scenarios that need the qemu SD model (deferred completion, clock gating, card
+  power) from the QEMU-EOS-Optimized repo: transfer frozen across a sleep without the hold, no `pmSelfRefresh`
+  between the first and last FIO call with it, `fsck`/hash of the written files.
+
+### Risks
+
+1. **Log volume.** Each FIO call adds two `[PS]` DryosDebugMsg lines. Harmless for Canon's ring buffer; with a
+   disk log (7D2/M6II/200D) each written chunk logs its own two lines, which decays (one 4 KiB flush per ~70
+   writes). If it matters, log only the 0/1 edges for `fio`.
+2. **Priority inversion.** A high-priority writer (raw video) may wait on the `ps_hold` semaphore while a
+   low-priority task holds it across a Canon eventproc call; the critical section is short.
+3. **EOSM unverified.** The SD analysis is 1100D only; EOSM may gate or power the card differently. The FIO hold is
+   conservative either way; the `sd overclock` hold covers the overclock case.
+4. **Trace files reopened in append mode** cost one directory update per idle period; traces that stream
+   continuously (no 2 s gap) behave as before.
