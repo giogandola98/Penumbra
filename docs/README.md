@@ -18,6 +18,7 @@ Some documents currently live only on branches that are not merged yet. Read the
 | [EMULATION.md](EMULATION.md) | The QEMU harness: scenarios, the wakeup plugin, metrics and their limits, 1100D findings, ROM handling |
 | [PORT-4000D.md](PORT-4000D.md) | Plan for the Canon 4000D port, based on the 1300D platform |
 | [analysis/power-audit.md](analysis/power-audit.md) | Audit of upstream ML on the EOS M: tasks and wakeup rates, power-save blockers, overlay hot paths, ranked fixes |
+| [analysis/overlay-kernels.md](analysis/overlay-kernels.md) | Zebra, peaking and histogram kernels: bit-exact equivalence tests and ARM926 instruction counts |
 | [firmware/1100D-powersave.md](firmware/1100D-powersave.md) | Canon 1100D `DisablePowerSave` / `EnablePowerSave`, the PowerMgr idle modes and self-refresh sleep (addresses and our own description) |
 | [firmware/fir-update-file.md](firmware/fir-update-file.md) | Why the EOS M 2.0.2 update file cannot replace a ROM dump (encrypted payload) |
 | [firmware/rom-md5.txt](firmware/rom-md5.txt) | Checksums of the maintainer's ROM dumps, used by CI to verify downloads (the dumps themselves are never in the repository) |

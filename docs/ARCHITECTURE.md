@@ -211,7 +211,7 @@ No number here is a battery measurement.
 | `audio_common_task` alone | ~100 switches/s | measured | 1100D in QEMU (matches the 100 Hz estimate) |
 | Canon power-save counter changes at idle with ML loaded | 3.3-3.7/s before → **0** after the lens-poll fix | measured | 1100D in QEMU, 30 s window, `full` and hold builds |
 | Canon power-save counter at idle | 1 (upstream ML) → **0** with holds, ML holds 0 | measured | 1100D in QEMU, hold build |
-| Overlay kernels | 1.29× to 3.56× fewer instructions, depending on kernel | measured | ARM926 instruction counts, camera compiler, emulated CPU, synthetic frames (host) |
+| Overlay kernels | 1.29× to 3.56× fewer instructions, depending on kernel ([details](analysis/overlay-kernels.md)) | measured | ARM926 instruction counts, camera compiler, emulated CPU, synthetic frames (host) |
 
 What these numbers do not show yet:
 
