@@ -52,9 +52,16 @@ def main():
                 sc, r["pc_samples"], ", ".join("%s=%.0f%%" % (pc, f * 100) for pc, f in r["top_pcs"][:5])))
     for sc, r in rows:
         if r and "pm_counter_window_end" in r:
-            print("%s power save at window end: Canon counter = %s, ML holds = %s; [PM] calls in window = %d, "
-                  "pmSelfRefresh msgs = %d" % (sc, r.get("pm_counter_window_end"), r.get("ml_holds_window_end"),
-                                               r.get("pm_calls_in_window", 0), r.get("self_refresh", 0)))
+            print("%s power save at window end: Canon counter = %s, ML holds = %s; [PM] calls in window = %d "
+                  "(%.2f counter changes/s), pmSelfRefresh msgs = %d" % (
+                      sc, r.get("pm_counter_window_end"), r.get("ml_holds_window_end"),
+                      r.get("pm_calls_in_window", 0), r.get("pm_changes_per_s") or 0, r.get("self_refresh", 0)))
+            if r.get("pm_counter_samples"):
+                print("    counter samples in window (value=count): %s" % ", ".join(
+                    "%s=%d" % kv for kv in sorted(r["pm_counter_samples"].items())))
+            if "pm_calls_menu" in r:
+                print("    ML menu open %.0f s after the window: [PM] calls = %d (%.2f/s)" % (
+                    r["menu_s"], r["pm_calls_menu"], r["pm_calls_menu"] / r["menu_s"]))
             for l in r.get("pm_tail", []) + r.get("ps_log", [])[:12]:
                 print("    %s" % l)
             for n, block in enumerate(r.get("pm_context", [])):

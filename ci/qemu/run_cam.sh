@@ -50,6 +50,9 @@ PLUGIN=$("$HERE/build-plugin.sh" "$work")
 debugmsg=$(sed -n 's/^NSTUB( *\(0x[0-9A-Fa-f]*\), *DryosDebugMsg).*/\1/p' "$PLAT/stubs.S" | head -1)
 echo "CAM=$CAM platform=${plats[0]} DryosDebugMsg=${debugmsg:-unknown} qemu-eos=$(cat /opt/qemu-eos/QEMU_EOS_SHA 2>/dev/null || echo ?)"
 
+# Canon's power-save counter in RAM (docs/firmware/1100D-powersave.md), sampled during the window
+case "$CAM" in 1100D) pmctr=0x2B64 ;; *) pmctr= ;; esac
+
 scenarios=(canon)
 [ -n "${ML_ZIP_FULL:-}" ] && scenarios+=(ml-full)
 [ -n "${ML_ZIP_PHOTO:-}" ] && scenarios+=(ml-photo)
@@ -75,6 +78,7 @@ for sc in "${scenarios[@]}"; do
     python3 -I "$HERE/scenario.py" --cam "$CAM" --rom-dir "$ML_ROM_DIR" \
         --sd "$work/sd.img" --cf "$work/cf.img" $boot --plugin "$PLUGIN" \
         ${debugmsg:+--debugmsg-addr "$debugmsg"} $([ "$TASKS" = 1 ] && echo --tasks) \
+        ${pmctr:+--pm-counter-addr "$pmctr"} \
         --warmup "$WARMUP_S" --measure "$MEASURE_S" --out "$OUT/$sc" || { echo "scenario $sc FAILED"; rc=1; }
     rm -f "$work/sd.img" "$work/cf.img"
 done

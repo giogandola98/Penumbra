@@ -92,6 +92,10 @@ def main():
     ap.add_argument("--plugin", required=True, help="path to libwakeups.so")
     ap.add_argument("--debugmsg-addr", default="", help="DryosDebugMsg address from stubs.S")
     ap.add_argument("--tasks", action="store_true", help="log task switches (-d tasks)")
+    ap.add_argument("--pm-counter-addr", default="",
+                    help="RAM address of Canon's power-save counter (1100D: 0x2B64), sampled in the window")
+    ap.add_argument("--menu-s", type=float, default=6,
+                    help="ML scenarios: seconds with the ML menu open after the window ([PM] calls counted)")
     ap.add_argument("--warmup", type=float, default=40)
     ap.add_argument("--measure", type=float, default=30)
     ap.add_argument("--out", required=True)
@@ -130,6 +134,7 @@ def main():
         q = subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL, stdout=logf, stderr=subprocess.STDOUT)
     result = {"cam": a.cam, "boot_ml": a.boot, "warmup_s": a.warmup, "measure_s": a.measure}
     log_start = log_end = 0
+    menu_start = menu_end = 0
     try:
         for _ in range(100):
             if os.path.exists(mon) or q.poll() is not None:
@@ -143,25 +148,39 @@ def main():
         result["boot_png"] = screenshot(mon, os.path.join(a.out, "boot.png"))
         # Sample the guest PC through the monitor during the window: a ROM-independent profile that
         # shows where the CPU spends its time (e.g. an idle loop that spins instead of sleeping).
+        # Canon's power-save counter is sampled the same way: a cross-check of the exact count of its
+        # changes, which comes from the [PM] messages Canon logs on every Disable/EnablePowerSave.
         pcs = {}
+        ctr = {}
         end = t0 + a.warmup + a.measure
         while time.time() < end - 0.5:
             m = re.search(r"R15=([0-9a-f]{8})", monitor_cmd(mon, "info registers", timeout=2))
             if m:
                 pcs[m.group(1)] = pcs.get(m.group(1), 0) + 1
+            if a.pm_counter_addr:
+                m = re.search(r":\s*0x([0-9a-f]+)", monitor_cmd(mon, "xp /1wx " + a.pm_counter_addr, timeout=2))
+                if m:
+                    v = str(int(m.group(1), 16))
+                    ctr[v] = ctr.get(v, 0) + 1
             time.sleep(min(0.5, max(0, end - time.time())))
         time.sleep(max(0, end - time.time()))
         n = sum(pcs.values())
         result["pc_samples"] = n
         result["top_pcs"] = [("0x" + pc, round(c / n, 3)) for pc, c in
                              sorted(pcs.items(), key=lambda kv: -kv[1])[:10]] if n else []
+        if a.pm_counter_addr:
+            result["pm_counter_samples"] = ctr
         log_end = os.path.getsize(log)
         result["idle_png"] = screenshot(mon, os.path.join(a.out, "idle.png"))
         if a.boot:
             # After the window, so it cannot skew the metrics: open the ML menu (Trash = Delete key
             # in qemu-eos) and capture it.
+            # The menu is a consumer of lens info outside LiveView: Canon's counter changes counted
+            # while it is open show whether ML still refreshes it (docs/analysis/powersave-hold.md).
+            menu_start = os.path.getsize(log)
             monitor_cmd(mon, "sendkey delete")
-            time.sleep(3)
+            time.sleep(max(3, a.menu_s))
+            menu_end = os.path.getsize(log)
             result["menu_png"] = screenshot(mon, os.path.join(a.out, "menu.png"))
         if q.poll() is not None:
             raise RuntimeError("QEMU died during the run, code %s (see qemu.log)" % q.returncode)
@@ -214,6 +233,13 @@ def main():
     ps = re.findall(r"\[PS\] (?:hold|release) .*? -> (\d+)", upto)
     result["pm_counter_window_end"] = int(pm[-1]) if pm else None
     result["pm_calls_in_window"] = len(re.findall(pm_re, window))
+    result["pm_changes_per_s"] = round(result["pm_calls_in_window"] / a.measure, 2)
+    if menu_end > menu_start:
+        with open(log, "rb") as f:
+            f.seek(menu_start)
+            menu = re.sub(r"\x1b\[[0-9;]*m", "", f.read(menu_end - menu_start).decode(errors="replace"))
+        result["pm_calls_menu"] = len(re.findall(pm_re, menu))
+        result["menu_s"] = max(3, a.menu_s)
     result["ml_holds_window_end"] = int(ps[-1]) if ps else None
     result["ps_log"] = [l.strip()[-80:] for l in re.sub(r"\x1b\[[0-9;]*m", "", text).splitlines() if "[PS] " in l][:40]
     result["pm_tail"] = [l.strip()[-100:] for l in upto.splitlines() if "[PM] " in l][-6:]
