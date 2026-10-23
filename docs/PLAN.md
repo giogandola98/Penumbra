@@ -30,7 +30,6 @@ before any hardware run.
 | 6 | **Overlay performance** | Peaking/zebra/histogram rewritten for ARMv5 (word-wide ops, decimation, frame skipping, LUTs); host unit + benchmark tests on YUV422 frames | Bit-exact vs reference, measurable cycle reduction |
 | 7 | **Stability** | Known EOSM bugs triaged/fixed; long-run soak in emulation | Soak test green |
 | 8 | **Hardware** *(last, with user)* | Install guide, rollback procedure, A/B battery protocol (shots per charge, LV minutes) | User sign-off |
-
 | 9 | **Port 4000D** (after the chain is proven on 1100D) | See docs/PORT-4000D.md: QEMU model, stub RE from 1300D base, minimal boot, platform dir, photo features | ML menu + photo features green in emulation; hardware last |
 
 ## Design decisions
