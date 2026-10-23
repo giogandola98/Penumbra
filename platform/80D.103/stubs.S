@@ -50,17 +50,17 @@ DATA_PTR(    0x46a0,  task_max)
 /** File I/O **/
 THUMB_FN(0xfe4827ba, _FIO_CreateFile)
 THUMB_FN(0xfe482744, _FIO_OpenFile)
-THUMB_FN(0xfe482a10,  FIO_CloseFile)
+THUMB_FN(0xfe482a10,  _FIO_CloseFile)
 THUMB_FN(0xfe482890, _FIO_ReadFile)
 THUMB_FN(0xfe4829a2, _FIO_WriteFile)
-THUMB_FN(0xfe482900,  FIO_SeekSkipFile)
+THUMB_FN(0xfe482900,  _FIO_SeekSkipFile)
 THUMB_FN(0xfe482afc, _FIO_GetFileSize)
 THUMB_FN(0xfe482824, _FIO_RemoveFile)
 THUMB_FN(0xfe482e80, _FIO_RenameFile)                       // FIO_RenameFile_Success
 THUMB_FN(0xfe482ffe, _FIO_CreateDirectory)
 THUMB_FN(0xfe4833c6, _FIO_FindFirstEx)
-THUMB_FN(0xfe48345a,  FIO_FindNextEx)
-THUMB_FN(0xfe4834dc,  FIO_FindClose)
+THUMB_FN(0xfe48345a,  _FIO_FindNextEx)
+THUMB_FN(0xfe4834dc,  _FIO_FindClose)
 THUMB_FN(0xfe4830ee,  FIO_Flush)
 
 /** Debug messages **/

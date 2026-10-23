@@ -1,2 +1,4 @@
 test_overlays
 test_powersave_hold
+test_fio_hold
+build/

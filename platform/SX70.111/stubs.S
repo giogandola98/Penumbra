@@ -50,15 +50,15 @@ NSTUB(       0x40D0,  task_max)                             /* 6th field in sysc
 THUMB_FN(0xe0510890, _FIO_OpenFile)               // Open
 THUMB_FN(0xe0511260, _FIO_GetFileSize64)          // AcqSize
 THUMB_FN(0xe0512564, _FIO_FindFirstEx)            // FirstEnt
-THUMB_FN(0xe0510df4,  FIO_SeekSkipFile)           // Search
+THUMB_FN(0xe0510df4, _FIO_SeekSkipFile)           // Search
 THUMB_FN(0xe0510942, _FIO_CreateFile)             // Create
 THUMB_FN(0xe0510d1a, _FIO_ReadFile)               // Read
 THUMB_FN(0xe05122ee,  FIO_Flush)                  // Flush
 THUMB_FN(0xe051210a, _FIO_CreateDirectory)        // CreateDir
 THUMB_FN(0xe0510c82, _FIO_RemoveFile)             // Remove
-THUMB_FN(0xe051265a,  FIO_FindNextEx)             // NextEnt
-THUMB_FN(0xe05110c6,  FIO_CloseFile)              // Close
-THUMB_FN(0xe051271c,  FIO_FindClose)              // CloseEnt
+THUMB_FN(0xe051265a, _FIO_FindNextEx)             // NextEnt
+THUMB_FN(0xe05110c6, _FIO_CloseFile)              // Close
+THUMB_FN(0xe051271c, _FIO_FindClose)              // CloseEnt
 THUMB_FN(0xe0510eb2, _FIO_WriteFile)              // Write
 THUMB_FN(0xe0511c86, _FIO_RenameFile)             // Rename
 

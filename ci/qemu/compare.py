@@ -8,6 +8,7 @@ the expectations of docs/analysis/powersave-hold.md; DEEP_SLEEP_ASSERT=1 turns a
 """
 import json
 import os
+import re
 import sys
 
 
@@ -24,12 +25,19 @@ def fmt(v, nd=1):
 
 
 def settings_saved(out, sc):
-    """ML wrote its config during the run (ML/SETTINGS/MAGIC.CFG with ML's own header, run_cam.sh)."""
+    """ML wrote its config during the run and the file is intact: ML/SETTINGS/MAGIC.CFG on the card
+    after the run (run_cam.sh) has ML's header, only `name = integer` lines, and beta.warn, which ML
+    sets when its warning is dismissed in this run (absent from any seeded preset)."""
     try:
         with open(os.path.join(out, sc, "sd_settings.txt"), errors="replace") as f:
-            return "# Configuration saved on" in f.read()
+            text = f.read()
     except OSError:
         return None
+    cfg = text.split("--- MAGIC.CFG", 1)[-1].strip().splitlines()
+    body = [l.strip() for l in cfg if l.strip() and not l.startswith("#")]
+    return ("# Configuration saved on" in text and bool(body)
+            and all(re.match(r"^[\w.]+ = -?\d+$", l) for l in body)
+            and any(l.startswith("beta.warn = ") for l in body))
 
 
 # Expected deep-sleep behaviour per scenario: does Canon enter selfRefresh with the display off?
@@ -75,8 +83,12 @@ def deep_sleep(out, rows):
         checks.append(("screen changes after the wake key", bool(d.get("screen_changed_on_wake"))))
         if r.get("menu_png"):
             checks.append(("ML menu opens after the wake", bool(d.get("menu_opened_after_wake"))))
-        if r.get("menu_closed_png"):
-            checks.append(("ML config saved after the wake", bool(saved)))
+        if r.get("menu_closed_png") and r.get("menu_set_png"):
+            checks.append(("ML config saved after the wake, file intact", bool(saved)))
+            fw = d.get("fio_after_wake") or {}
+            checks.append(("card writes after the wake: fio holds pair (%d/%d)" % (
+                fw.get("holds", 0), fw.get("releases", 0)),
+                fw.get("holds", 0) > 0 and fw.get("holds") == fw.get("releases")))
         if sc == "ml-hold-ivl":
             checks.append(("intervalometer hold taken", any("intervalometer" in l for l in r.get("ps_log", []))))
             tasks = dict(d.get("top_tasks") or [])
@@ -127,6 +139,11 @@ def main():
             if r.get("pm_counter_samples"):
                 print("    counter samples in window (value=count): %s" % ", ".join(
                     "%s=%d" % kv for kv in sorted(r["pm_counter_samples"].items())))
+            if "fio_holds" in r:
+                print("    card I/O holds (fio): %d taken, %d released, %d in the window; ML holds after menu "
+                      "closed = %s; checks: %s" % (
+                          r["fio_holds"], r["fio_releases"], r.get("fio_holds_in_window", 0),
+                          r.get("ml_holds_end"), "; ".join(r.get("checks_failed") or []) or "ok"))
             if "pm_calls_menu" in r:
                 print("    ML menu open %.0f s after the window: [PM] calls = %d (%.2f/s)" % (
                     r["menu_s"], r["pm_calls_menu"], r["pm_calls_menu"] / r["menu_s"]))

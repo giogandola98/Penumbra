@@ -2605,6 +2605,12 @@ static void mlv_play_task(void *priv)
         return;
     }
     
+    /* log only while playing (it used to stay open for the whole session); its writes are
+     * held against Canon's deep sleep by FIO_WriteFile, see docs/analysis/powersave-hold.md */
+    mlv_play_trace_ctx = trace_start("mlv_play", "mlv_play.log");
+    trace_set_flushrate(mlv_play_trace_ctx, 500);
+    trace_format(mlv_play_trace_ctx, TRACE_FMT_TIME_REL | TRACE_FMT_COMMENT, ' ');
+    
     FILE **chunk_files = NULL;
     uint32_t chunk_count = 0;
     char *filename = (char *)priv;
@@ -2713,6 +2719,10 @@ cleanup:
     mlv_play_leave_playback();
     mlv_play_delete_requested = 0;
     mlv_play_osd_delete_selected = 0;
+    
+    trace_stop(mlv_play_trace_ctx, 1);
+    mlv_play_trace_ctx = TRACE_ERROR;
+    
     give_semaphore(mlv_play_sem);
     
     /* undo black and white level change */
@@ -2857,11 +2867,6 @@ static unsigned int mlv_play_keypress_cbr(unsigned int key)
 
 static unsigned int mlv_play_init()
 {
-    /* setup log file */
-    mlv_play_trace_ctx = trace_start("mlv_play", "mlv_play.log");
-    trace_set_flushrate(mlv_play_trace_ctx, 500);
-    trace_format(mlv_play_trace_ctx, TRACE_FMT_TIME_REL | TRACE_FMT_COMMENT, ' ');
-    
     /* setup queues for frame buffers */
     mlv_play_queue_empty = (struct msg_queue *) msg_queue_create("mlv_play_queue_empty", 10);
     mlv_play_queue_render = (struct msg_queue *) msg_queue_create("mlv_play_queue_render", 10);

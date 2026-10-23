@@ -55,11 +55,11 @@ NSTUB(0xFF0C5298,  init_task)
 NSTUB(   0x46910,  additional_version)                      // GuiDataStorage
 
 /** File I/O **/
-NSTUB(0xFF30E814,  FIO_CloseFile)
-NSTUB(0xFF30F80C,  FIO_FindClose)                           // proper name: FindClose
-NSTUB(0xFF30F72C,  FIO_FindNextEx)
+NSTUB(0xFF30E814,  _FIO_CloseFile)
+NSTUB(0xFF30F80C, _FIO_FindClose)                           // proper name: FindClose
+NSTUB(0xFF30F72C,  _FIO_FindNextEx)
 NSTUB(0xFF30E5C4, _FIO_ReadFile)
-NSTUB(0xFF30E674,  FIO_SeekSkipFile)
+NSTUB(0xFF30E674,  _FIO_SeekSkipFile)
 NSTUB(0xFF30E764, _FIO_WriteFile)
 NSTUB(0xFF30F070, _FIO_CreateDirectory)
 NSTUB(0xFF30E470, _FIO_CreateFile)

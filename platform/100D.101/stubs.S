@@ -39,11 +39,11 @@ NSTUB(0xFF0C56BC,  init_task)
 // NSTUB(    ???,  additional_version)                      /* present on 7D.203, 500D.111, 60D.111, 5D3.113, 50D.109, 5D2.212, 600D.102, 550D.109, 1100D.105, 700D.113 */
 
 /** File I/O **/
-NSTUB(0xFF343230,  FIO_CloseFile)
-NSTUB(0xFF344228,  FIO_FindClose)
-NSTUB(0xFF344148,  FIO_FindNextEx)
+NSTUB(0xFF343230,  _FIO_CloseFile)
+NSTUB(0xFF344228,  _FIO_FindClose)
+NSTUB(0xFF344148,  _FIO_FindNextEx)
 NSTUB(0xFF342FE0, _FIO_ReadFile)
-NSTUB(0xFF343090,  FIO_SeekSkipFile)
+NSTUB(0xFF343090,  _FIO_SeekSkipFile)
 NSTUB(0xFF343180, _FIO_WriteFile)
 NSTUB(0xFF343A8C, _FIO_CreateDirectory)
 NSTUB(0xFF342E8C, _FIO_CreateFile)

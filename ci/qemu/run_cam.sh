@@ -78,7 +78,7 @@ run_scenario() {   # $1 = scenario; disk images and console output are per scena
         ml-full)  zip=$ML_ZIP_FULL;   boot=--boot ;;
         ml-photo) zip=$ML_ZIP_PHOTO;  boot=--boot ;;
         ml-hold)  zip=$ML_ZIP_HOLD;   boot=--boot ;;
-        ml-hold-ivl) zip=$ML_ZIP_HOLD; boot=--boot; seeds+=(--put "ML/SETTINGS/MAGIC.CFG:$work/ivl.cfg"); extra+=(--no-menu) ;;
+        ml-hold-ivl) zip=$ML_ZIP_HOLD; boot=--boot; seeds+=(--put "ML/SETTINGS/MAGIC.CFG:$work/ivl.cfg"); extra+=(--no-menu --active-hold intervalometer) ;;
     esac
     [ -n "$boot" ] && extra+=(--config-check)
     if [ -n "$zip" ]; then      # see make_sd_image.py --seed: skip ML's first-boot ROM backup

@@ -59,16 +59,16 @@ THUMB_FN(0x1ea0d28e, _FIO_OpenFile)         // Storage::Storage.c Open
 THUMB_FN(0x1ea0d446, _FIO_CreateFile)       // Storage::Storage.c Create
 THUMB_FN(0x1ea0d794, _FIO_RemoveFile)       // Storage::Storage.c Remove
 THUMB_FN(0x1ea0d846, _FIO_ReadFile)         // Storage::Storage.c Read
-THUMB_FN(0x1ea0dc42,  FIO_SeekSkipFile)     // Storage::Storage.c Search
+THUMB_FN(0x1ea0dc42, _FIO_SeekSkipFile)     // Storage::Storage.c Search
 THUMB_FN(0x1ea0dd08, _FIO_WriteFile)        // Storage::Storage.c Write
-THUMB_FN(0x1ea0e6c4,  FIO_CloseFile)        // Storage::Storage.c Close
+THUMB_FN(0x1ea0e6c4, _FIO_CloseFile)        // Storage::Storage.c Close
 THUMB_FN(0x1ea0e908, _FIO_GetFileSize64)    // Storage::Storage.c AcqSize
 THUMB_FN(0x1ea0f3a4, _FIO_RenameFile)       // Storage::Storage.c Rename
 THUMB_FN(0x1ea0f82a, _FIO_CreateDirectory)  // Storage::Storage.c CreateDir
 THUMB_FN(0x1ea0fb80,  FIO_Flush)            // Storage::Storage.c Flush
 THUMB_FN(0x1ea0fe84, _FIO_FindFirstEx)      // Storage::Storage.c FirstEnt
-THUMB_FN(0x1ea0ff94,  FIO_FindNextEx)       // Storage::Storage.c NextEnt
-THUMB_FN(0x1ea10054,  FIO_FindClose)        // Storage::Storage.c CloseEnt
+THUMB_FN(0x1ea0ff94, _FIO_FindNextEx)       // Storage::Storage.c NextEnt
+THUMB_FN(0x1ea10054, _FIO_FindClose)        // Storage::Storage.c CloseEnt
 
 /** Bitmap **/
 // Not needed with FEATURE_VRAM_RGBA (and doesn't exist?)
