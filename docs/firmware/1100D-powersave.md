@@ -1,6 +1,6 @@
 # Canon 1100D 1.0.5: `DisablePowerSave` / `EnablePowerSave` and the PowerMgr idle loop
 
-Static analysis of the user's own ROM1 dump (16 MiB, offset 0 = 0xFF000000; data segment copied from
+Static analysis of the maintainer's own ROM1 dump (16 MiB, offset 0 = 0xFF000000; data segment copied from
 0xFF6DF858 to RAM 0x1900). Tags: **[V]** read directly in the disassembly, **[I]** inferred.
 Answers `analysis/power-audit.md` §3.1 for the 1100D. EOSM (DIGIC 5) may differ and is **not** covered here.
 
@@ -141,6 +141,6 @@ QEMU first (`ci/qemu`, 1100D):
 3. Regression: with the patch, run the intervalometer with the display off and check that ML tasks keep their wake
    rate (no stalls) while the hold is taken.
 
-Hardware last (only when the user says so): measure battery current or runtime with the LCD on at idle and with the
+Hardware last (by the maintainer, after emulation): measure battery current or runtime with the LCD on at idle and with the
 LCD off, stock vs current ML vs patched ML. Check that intervalometer shots are on time with the display off, and
 that APO still fires at the configured time.
