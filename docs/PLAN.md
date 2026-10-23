@@ -31,6 +31,8 @@ before any hardware run.
 | 7 | **Stability** | Known EOSM bugs triaged/fixed; long-run soak in emulation | Soak test green |
 | 8 | **Hardware** *(last, with user)* | Install guide, rollback procedure, A/B battery protocol (shots per charge, LV minutes) | User sign-off |
 
+| 9 | **Port 4000D** (after the chain is proven on 1100D) | See docs/PORT-4000D.md: QEMU model, stub RE from 1300D base, minimal boot, platform dir, photo features | ML menu + photo features green in emulation; hardware last |
+
 ## Design decisions
 - Stay in C (no rewrite in Rust/other): power cost comes from the polling architecture, not the language; ML's value is 13 years of reverse-engineered camera knowledge. Hand-written ARMv5TE assembly only for proven hot pixel loops, guarded by host bit-exact tests.
 
