@@ -3,13 +3,14 @@
 #   canon     Canon firmware only (camera bootflag off, card without ML)
 #   ml-full   upstream-equivalent ML build (ML_PROFILE=full)        if ML_ZIP_FULL is set
 #   ml-photo  this fork's photo build (ML_PROFILE=photo, EOSM only)  if ML_ZIP_PHOTO is set
+#   ml-hold   ml-full built with POWERSAVE_HOLD=y (1100D)             if ML_ZIP_HOLD is set
 # Runs inside the ml-qemu image. Without ROMs it prints SKIPPED and exits 0.
 #
 # Environment:
 #   CAM            camera model as qemu-eos names it (default EOSM; e.g. 1100D). ML platform dir is
 #                  platform/CAM.<fw> (EOSM -> EOSM.202, 1100D -> 1100D.105).
 #   ML_ROM_DIR     dir containing CAM/ROM0.BIN ROM1.BIN [SFDATA.BIN] (default /roms); never written.
-#   ML_ZIP_FULL, ML_ZIP_PHOTO   built magiclantern.zip of each profile (optional)
+#   ML_ZIP_FULL, ML_ZIP_PHOTO, ML_ZIP_HOLD   built magiclantern.zip of each variant (optional)
 #   WARMUP_S, MEASURE_S         boot time excluded from, and length of, the measurement window (40, 30)
 #   TASKS=1        also count DryOS task switches with qemu-eos `-d tasks` (default 1)
 #   OUT            output dir (default emu-out/CAM)
@@ -52,6 +53,7 @@ echo "CAM=$CAM platform=${plats[0]} DryosDebugMsg=${debugmsg:-unknown} qemu-eos=
 scenarios=(canon)
 [ -n "${ML_ZIP_FULL:-}" ] && scenarios+=(ml-full)
 [ -n "${ML_ZIP_PHOTO:-}" ] && scenarios+=(ml-photo)
+[ -n "${ML_ZIP_HOLD:-}" ] && scenarios+=(ml-hold)
 
 rc=0
 for sc in "${scenarios[@]}"; do
@@ -60,6 +62,7 @@ for sc in "${scenarios[@]}"; do
         canon)    zip=;               boot=   ;;
         ml-full)  zip=$ML_ZIP_FULL;   boot=--boot ;;
         ml-photo) zip=$ML_ZIP_PHOTO;  boot=--boot ;;
+        ml-hold)  zip=$ML_ZIP_HOLD;   boot=--boot ;;
     esac
     seeds=()
     if [ -n "$zip" ]; then      # see make_sd_image.py --seed: skip ML's first-boot ROM backup

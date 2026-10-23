@@ -19,10 +19,10 @@ chmod 700 "$romroot"
 cleanup() { chmod -R u+w "$romroot" 2>/dev/null || true; rm -rf "$romroot"; }
 trap cleanup EXIT INT TERM
 
-build_zip() {   # $1 platform dir, $2 profile (or "" for platforms without profiles), $3 output zip
+build_zip() {   # $1 platform dir, $2 profile (or "" for platforms without profiles), $3 output zip, $4 extra make vars
     local prof=${2:+ML_PROFILE=$2}
     podman run $SANDBOX -v "$SRC:/work" -w /work "$CI_IMAGE" bash -c \
-        "make -C platform/$1 clean >/dev/null && make -C platform/$1 -j\$(nproc) $prof >/dev/null && cp platform/$1/build/magiclantern.zip /work/$3"
+        "make -C platform/$1 clean >/dev/null && make -C platform/$1 -j\$(nproc) $prof ${4:-} >/dev/null && cp platform/$1/build/magiclantern.zip /work/$3"
 }
 
 rc=0
@@ -48,8 +48,11 @@ for cam in $EMU_CAMS; do
         build_zip "$plat" full "emu-zips/$cam-full.zip" && build_zip "$plat" photo "emu-zips/$cam-photo.zip" || { rc=1; continue; }
         envs+=(-e "ML_ZIP_FULL=/work/emu-zips/$cam-full.zip" -e "ML_ZIP_PHOTO=/work/emu-zips/$cam-photo.zip")
     else
-        build_zip "$plat" "" "emu-zips/$cam-full.zip" || { rc=1; continue; }
-        envs+=(-e "ML_ZIP_FULL=/work/emu-zips/$cam-full.zip")
+        # Same build with the counted powersave holds (docs/analysis/powersave-hold.md);
+        # the EOSM photo profile already has them.
+        build_zip "$plat" "" "emu-zips/$cam-full.zip" && build_zip "$plat" "" "emu-zips/$cam-hold.zip" POWERSAVE_HOLD=y \
+            || { rc=1; continue; }
+        envs+=(-e "ML_ZIP_FULL=/work/emu-zips/$cam-full.zip" -e "ML_ZIP_HOLD=/work/emu-zips/$cam-hold.zip")
     fi
 
     podman run $SANDBOX --tmpfs /tmp:rw,size=2g -v "$SRC:/work" -v "$romroot:/roms:ro" -w /work \

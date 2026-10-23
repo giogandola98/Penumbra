@@ -201,6 +201,14 @@ def main():
     # ML's own DryOS tasks show up in the task-switch log once autoexec.bin runs.
     result["ml_detected"] = bool(re.search(r"\b(ml_init|menu_task|shoot_task|livev_hiprio_task|clock_task)\b", text))
     result["log_lines"] = text.count("\n")
+    # CPU power save (docs/analysis/powersave-hold.md): Canon logs its counter on every
+    # Disable/EnablePowerSave, ML logs its own holds as "[PS] hold|release <who> -> <total>".
+    pm = re.findall(r"\[PM\] (?:Disable|Enable)PowerSave \(Counter = (\d+)\)", text)
+    ps = re.findall(r"\[PS\] (?:hold|release) .*? -> (\d+)", text)
+    result["pm_counter_last"] = int(pm[-1]) if pm else None
+    result["pm_calls"] = len(pm)
+    result["ml_holds_last"] = int(ps[-1]) if ps else None
+    result["self_refresh"] = len(re.findall(r"pmSelfRefresh", text))
     with open(os.path.join(a.out, "result.json"), "w") as f:
         json.dump(result, f, indent=1)
     print(json.dumps(result))
