@@ -15,3 +15,8 @@
 #undef CONFIG_ADDITIONAL_VERSION
 #undef CONFIG_AUTOBACKUP_ROM
 #undef CONFIG_PROP_REQUEST_CHANGE
+
+/* Photo profile (default build, docs/BUILD-PROFILES.md): photo features on top of the bring-up set */
+#ifdef CONFIG_PROFILE_PHOTO
+#include "features-photo.h"
+#endif

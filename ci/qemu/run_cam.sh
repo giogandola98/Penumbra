@@ -2,10 +2,11 @@
 # Boot a Canon camera in qemu-eos headless and compare idle wakeups across scenarios:
 #   canon     Canon firmware only (camera bootflag off, card without ML)
 #   ml-full   upstream-equivalent ML build (ML_PROFILE=full)        if ML_ZIP_FULL is set
-#   ml-photo  this fork's photo build (ML_PROFILE=photo, EOSM only)  if ML_ZIP_PHOTO is set
+#   ml-photo  this fork's photo build (ML_PROFILE=photo: EOSM, 4000D) if ML_ZIP_PHOTO is set
 #   ml-hold   ml-full built with POWERSAVE_HOLD=y (1100D)             if ML_ZIP_HOLD is set
 #   ml-hold-ivl  ml-hold with the intervalometer auto-started by a config preset (an active hold)
 #                                                                    if ML_ZIP_HOLD and DISPLAY_OFF_S > 0
+#   ml-photo-ivl ml-photo with the same preset                      if ML_ZIP_PHOTO and IVL_PHOTO=1 (4000D)
 # Runs inside the qemu-eos image pinned in ci/qemu-image.txt. Without ROMs it prints SKIPPED and exits 0.
 #
 # Environment:
@@ -71,6 +72,11 @@ ml_ready=(--ready-marker '\[PS\] release boot ->')
 
 # Port bring-up: log the GUI events behind each emulated key in the canon scenario (scenario.py --probe-keys).
 case "$CAM" in 4000D) PROBE_KEYS=${PROBE_KEYS-m,m,delete,i,i,q,q,p,p,spc,a,up,down,left,right,z,x} ;; *) PROBE_KEYS=${PROBE_KEYS-} ;; esac
+# Port bring-up: walk the ML menu tabs (scenario.py --menu-tour; right = next tab, wraps around) in the ML scenarios.
+case "$CAM" in 4000D) MENU_TOUR=${MENU_TOUR-right,right,right,right,right,right} ;; *) MENU_TOUR=${MENU_TOUR-} ;; esac
+# Intervalometer auto-started by a config preset (an active hold, see ml-hold-ivl below): on the 1100D with the
+# display-off segment, on the 4000D in the photo build (its intervalometer check; no deep-sleep model there).
+case "$CAM" in 4000D) IVL_PHOTO=${IVL_PHOTO:-1} ;; *) IVL_PHOTO=${IVL_PHOTO:-0} ;; esac
 
 # Stubs against their ROM evidence (tools/check_stubs.py; skipped for platforms without an evidence file).
 python3 -I "$ROOT/tools/check_stubs.py" "$PLAT" "$romdir/ROM1.BIN" | tee "$OUT/stubs-check.txt" || { echo "stub check FAILED"; exit 1; }
@@ -80,6 +86,7 @@ scenarios=(canon)
 [ -n "${ML_ZIP_PHOTO:-}" ] && scenarios+=(ml-photo)
 [ -n "${ML_ZIP_HOLD:-}" ] && scenarios+=(ml-hold)
 [ -n "${ML_ZIP_HOLD:-}" ] && [ "${DISPLAY_OFF_S%.*}" -gt 0 ] && scenarios+=(ml-hold-ivl)
+[ -n "${ML_ZIP_PHOTO:-}" ] && [ "$IVL_PHOTO" = 1 ] && scenarios+=(ml-photo-ivl)
 
 # ml-hold-ivl: ML config preset that auto-starts the intervalometer at boot (trigger "Leave menu" = 0),
 # first shot after 15 min, so it holds power save for the whole run without taking a picture.
@@ -92,8 +99,11 @@ run_scenario() {   # $1 = scenario; disk images and console output are per scena
         ml-full)  zip=$ML_ZIP_FULL;   boot=--boot ;;
         ml-photo) zip=$ML_ZIP_PHOTO;  boot=--boot ;;
         ml-hold)  zip=$ML_ZIP_HOLD;   boot=--boot ;;
-        ml-hold-ivl) zip=$ML_ZIP_HOLD; boot=--boot; seeds+=(--put "ML/SETTINGS/MAGIC.CFG:$work/ivl.cfg"); extra+=(--no-menu --active-hold intervalometer) ;;
+        ml-hold-ivl|ml-photo-ivl)
+                  zip=$ML_ZIP_HOLD; [ "$sc" = ml-photo-ivl ] && zip=$ML_ZIP_PHOTO
+                  boot=--boot; seeds+=(--put "ML/SETTINGS/MAGIC.CFG:$work/ivl.cfg"); extra+=(--no-menu --active-hold intervalometer) ;;
     esac
+    case $sc in ml-full|ml-photo|ml-hold) [ -n "$MENU_TOUR" ] && extra+=(--menu-tour "$MENU_TOUR") ;; esac
     [ -n "$boot" ] && extra+=(--config-check)
     extra+=(${canon_ready[@]+"${canon_ready[@]}"})
     [ -n "$boot" ] && extra+=("${ml_ready[@]}")

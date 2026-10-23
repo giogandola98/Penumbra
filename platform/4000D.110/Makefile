@@ -23,5 +23,22 @@ ML_BOOT_OBJ = boot-d45-ch.o
 FIRMWARE_ID_4000D = 0x80000422
 ML_SRC_EXTRA_OBJS += $(BUILD_DIR)/function_overrides.o
 
+# Build profile, see docs/BUILD-PROFILES.md
+#   make                    -> photo profile: bring-up set + photo features verified in emulation
+#   make ML_PROFILE=full    -> bring-up set only (debug menus), the comparison baseline
+# There is no upstream feature set for this camera yet, so "full" is not upstream-equivalent here.
+ML_PROFILE ?= photo
+
+ifeq ($(ML_PROFILE),photo)
+    CFLAGS_PLATFORM += -DCONFIG_PROFILE_PHOTO
+    MODULES_INCLUDED = modules-photo.included
+    # CPU powersave held only while needed (docs/analysis/powersave-hold.md); POWERSAVE_HOLD=n to opt out
+    POWERSAVE_HOLD ?= y
+else ifeq ($(ML_PROFILE),full)
+    CFLAGS_PLATFORM += -DCONFIG_PROFILE_FULL
+else
+    $(error Unknown ML_PROFILE '$(ML_PROFILE)' (expected photo or full))
+endif
+
 include ../Makefile
 .DEFAULT_GOAL := $(BUILD_DIR)/cam_complete

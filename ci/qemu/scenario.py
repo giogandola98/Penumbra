@@ -322,6 +322,10 @@ def main():
                     help="display off / wake / menu: how long to wait for the guest to react to a key")
     ap.add_argument("--display-off-marker", default="TurnOffDisplay",
                     help="log regex showing the display-off key took effect (the idle segment is timed from it)")
+    ap.add_argument("--menu-tour", default="",
+                    help="ML scenarios: comma-separated qemu-eos keys sent with the ML menu reopened after the "
+                         "config check (e.g. right,right = next tabs); each must change the screen "
+                         "(menu_tourNN_<key>.png), then MENU closes it")
     ap.add_argument("--probe-keys", default="",
                     help="comma-separated qemu-eos keys sent at the end; logs the GUI events each one causes")
     ap.add_argument("--warmup", type=float, default=40)
@@ -506,6 +510,32 @@ def main():
                 w = wait_log(log, [r"\[PS\] release fio"], keys_log, a.step_timeout, q)
                 result["config_save_wait_s"] = None if w is None else round(w, 2)
             result["menu_closed_png"] = screenshot(mon, os.path.join(a.out, "menu_closed.png"))
+            if a.menu_tour:
+                # Menu navigation: reopen the ML menu (no beta warning any more: it opens on the tab it was
+                # closed on) and walk it with the given keys (left/right outside edit mode switch tabs).
+                # Every key must change the screen: a frozen menu or a dead key fails here. MENU closes it;
+                # the holds checks below then also cover this walk.
+                tour = []
+                monitor_cmd(mon, "sendkey delete")
+                prev = wait_screen(mon, os.path.join(a.out, "menu_tour00_open.png"),
+                                   frame_hash(result["menu_closed_png"]), 2, a.step_timeout, q)
+                tour.append({"key": "delete", "png": prev, "changed": bool(prev) and (
+                    frame_hash(prev) != frame_hash(result["menu_closed_png"]))})
+                for i, k in enumerate(a.menu_tour.split(",")):
+                    monitor_cmd(mon, "sendkey " + k)
+                    time.sleep(2)
+                    png = screenshot(mon, os.path.join(a.out, "menu_tour%02d_%s.png" % (i + 1, k)))
+                    tour.append({"key": k, "png": png, "changed": bool(png and prev) and (
+                        frame_hash(png) != frame_hash(prev))})
+                    prev = png or prev
+                monitor_cmd(mon, "sendkey m")
+                time.sleep(3)
+                png = screenshot(mon, os.path.join(a.out, "menu_tour_closed.png"))
+                tour.append({"key": "m", "png": png, "changed": bool(png and prev) and (
+                    frame_hash(png) != frame_hash(prev))})
+                if not all(t["png"] for t in tour):
+                    raise InfraTimeout("screendump did not complete (menu tour)")
+                result["menu_tour"] = tour
         if a.probe_keys:
             # Key probe (port bring-up): which GUI events Canon's firmware derives from each emulated
             # key. GUI_Control / GUI_OTHEREVENT debug messages name the event code ML's gui.h uses.
@@ -665,6 +695,10 @@ def main():
             failed.append("ML holds at window end = %s, expected 0" % result["ml_holds_window_end"])
         if not a.active_hold and result["ml_holds_end"] != 0:
             failed.append("ML holds after the menu closed = %s, expected 0" % result["ml_holds_end"])
+        for t in result.get("menu_tour", []):
+            if not t["changed"]:
+                failed.append("menu tour: screen unchanged after key %s (%s)" % (
+                    t["key"], os.path.basename(t["png"] or "?")))
         if result["fio_holds"] == 0:
             failed.append("no [PS] hold fio in the log")
         if result["fio_holds"] != result["fio_releases"]:
