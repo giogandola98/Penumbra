@@ -26,7 +26,7 @@
 
 #include "dryos.h"
 
-#if defined(CONFIG_DIGIC_678X) || defined(CONFIG_1300D)
+#if defined(CONFIG_DIGIC_678X) || defined(CONFIG_1300D) || defined(CONFIG_4000D)
 // Originally we thought this was split based on Digic version,
 // more likely it is DryOS version based, and modern D45 cams
 // have this API too.
