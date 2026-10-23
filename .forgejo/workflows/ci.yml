@@ -10,6 +10,9 @@ jobs:
     runs-on: linux-podman
     env:
       IMAGE: ml-ci
+      # Shared runner executes jobs as root on the host: confine every build step (no network,
+      # no capabilities, no privilege escalation, bounded processes).
+      SANDBOX: --rm --network=none --security-opt label=disable --cap-drop=all --security-opt no-new-privileges --pids-limit=512
     steps:
       - name: Checkout
         run: |
@@ -28,16 +31,16 @@ jobs:
 
       - name: Build EOSM.202 (FATAL_WARNINGS=y)
         run: |
-          podman run --rm --network=none --security-opt label=disable -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/build.sh
+          podman run $SANDBOX -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/build.sh
 
       - name: Host tests
         run: |
-          podman run --rm --network=none --security-opt label=disable -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/host-tests.sh
+          podman run $SANDBOX -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/host-tests.sh
 
       - name: cppcheck (report only)
         continue-on-error: true
         run: |
-          podman run --rm --network=none --security-opt label=disable -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/cppcheck.sh
+          podman run $SANDBOX -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/cppcheck.sh
 
       - name: Collect artifacts
         if: always()
