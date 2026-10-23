@@ -73,10 +73,13 @@ ml_ready=(--ready-marker '\[PS\] release boot ->')
 # Port bring-up: log the GUI events behind each emulated key in the canon scenario (scenario.py --probe-keys).
 case "$CAM" in 4000D) PROBE_KEYS=${PROBE_KEYS-m,m,delete,i,i,q,q,p,p,spc,a,up,down,left,right,z,x} ;; *) PROBE_KEYS=${PROBE_KEYS-} ;; esac
 # Port bring-up: walk the ML menu tabs (scenario.py --menu-tour; right = next tab, wraps around) in the ML scenarios.
-case "$CAM" in 4000D) MENU_TOUR=${MENU_TOUR-right,right,right,right,right,right} ;; *) MENU_TOUR=${MENU_TOUR-} ;; esac
+case "$CAM" in 4000D) MENU_TOUR=${MENU_TOUR-right,right,right,right,right,right,right} ;; *) MENU_TOUR=${MENU_TOUR-} ;; esac
 # Intervalometer auto-started by a config preset (an active hold, see ml-hold-ivl below): on the 1100D with the
 # display-off segment, on the 4000D in the photo build (its intervalometer check; no deep-sleep model there).
 case "$CAM" in 4000D) IVL_PHOTO=${IVL_PHOTO:-1} ;; *) IVL_PHOTO=${IVL_PHOTO:-0} ;; esac
+# Modules switched on (ML/SETTINGS/<name>.en) in the photo scenarios, so they are loaded at boot. ML ships modules
+# disabled; sd_clock (SD overclock) stays off on purpose.
+case "$CAM" in 4000D) PHOTO_MODULES=${PHOTO_MODULES-file_man img_name} ;; *) PHOTO_MODULES=${PHOTO_MODULES-} ;; esac
 
 # Stubs against their ROM evidence (tools/check_stubs.py; skipped for platforms without an evidence file).
 python3 -I "$ROOT/tools/check_stubs.py" "$PLAT" "$romdir/ROM1.BIN" | tee "$OUT/stubs-check.txt" || { echo "stub check FAILED"; exit 1; }
@@ -104,6 +107,10 @@ run_scenario() {   # $1 = scenario; disk images and console output are per scena
                   boot=--boot; seeds+=(--put "ML/SETTINGS/MAGIC.CFG:$work/ivl.cfg"); extra+=(--no-menu --active-hold intervalometer) ;;
     esac
     case $sc in ml-full|ml-photo|ml-hold) [ -n "$MENU_TOUR" ] && extra+=(--menu-tour "$MENU_TOUR") ;; esac
+    case $sc in ml-photo|ml-photo-ivl)
+        : > "$work/module.en"
+        for m in $PHOTO_MODULES; do seeds+=(--put "ML/SETTINGS/$(echo "$m" | tr a-z A-Z).EN:$work/module.en"); done ;;
+    esac
     [ -n "$boot" ] && extra+=(--config-check)
     extra+=(${canon_ready[@]+"${canon_ready[@]}"})
     [ -n "$boot" ] && extra+=("${ml_ready[@]}")

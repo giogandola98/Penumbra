@@ -1,1 +1,4 @@
 # Photo profile: modules included in magiclantern.zip (see docs/BUILD-PROFILES.md)
+file_man
+img_name
+sd_clock
