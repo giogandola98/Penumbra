@@ -397,6 +397,11 @@ ROM1 literal pools; EOSM not covered):
 - QEMU (`ci/qemu/scenario.py`, ML scenarios with the DryosDebugMsg log): the run fails unless ML's holds are 0 at
   the end of the idle window and again after the ML menu is closed, and `[PS] hold fio` appears (config, fonts and
   modules are read at boot) with as many `release fio` as holds. `comparison.md` prints the counts.
+  Forgejo CI run 48 (1100D.105): `ml-full` and `ml-hold` each take 72 `fio` holds at boot and release all 72, none
+  in the 30 s idle window; ML's holds are 0 at the window end and after the menu closed; `ml-hold` keeps Canon's
+  counter at 0 for the whole window (59/59 RAM samples) with no `[PM]` call, and the idle metrics (task switches,
+  IRQ/s, PC profile) are within run-to-run noise of run 39. The menu is closed with MENU, since the first key press
+  after a fresh boot only dismisses ML's beta warning.
   **Pending:** a config save triggered from the menu (it needs a menu change to make the config dirty; the harness
   only sends blind keys), and the SD scenarios that need the qemu SD model (deferred completion, clock gating, card
   power) from the QEMU-EOS-Optimized repo: transfer frozen across a sleep without the hold, no `pmSelfRefresh`
