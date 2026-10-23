@@ -63,7 +63,12 @@ echo "CAM=$CAM platform=${plats[0]} DryosDebugMsg=${debugmsg:-unknown} qemu-eos=
 
 # Canon's power-save counter in RAM (docs/firmware/1100D-powersave.md), sampled during the window.
 # Deep sleep (selfRefresh) is modelled by qemu-eos for the 1100D only.
-case "$CAM" in 1100D) pmctr=0x2B64; DISPLAY_OFF_S=${DISPLAY_OFF_S:-30} ;; *) pmctr=; DISPLAY_OFF_S=${DISPLAY_OFF_S:-0} ;; esac
+# 4000D: same PowerSaver struct (RAM 0x31648: +0 "PowerSaver" magic, +4 counter), docs/firmware/4000D-stubs.md.
+case "$CAM" in
+    1100D) pmctr=0x2B64; DISPLAY_OFF_S=${DISPLAY_OFF_S:-30} ;;
+    4000D) pmctr=0x3164C; DISPLAY_OFF_S=${DISPLAY_OFF_S:-0} ;;
+    *)     pmctr=; DISPLAY_OFF_S=${DISPLAY_OFF_S:-0} ;;
+esac
 # Guest ready (scenario.py --ready-marker, DryosDebugMsg log): the window is timed from it, not from launch.
 # Canon: the display is on at the end of boot (1100D; other models: a stable screen). ML: its boot hold
 # is released (src/powersave.c), i.e. ML's init, ROM backup and module loading are over.

@@ -682,6 +682,14 @@ def main():
     infra = result.get("infra_error")
     if a.debugmsg_addr and not infra and not result.get("error") and result["pm_counter_window_end"] is None:
         failed.append("no Canon [PM] counter message in the log by the window end")
+    # The counter address (--pm-counter-addr) must agree with Canon's own [PM] log: with no Disable/Enable in the
+    # window, every RAM sample equals the last logged count (a wrong address shows up here).
+    ctr = result.get("pm_counter_samples") or {}
+    if (a.pm_counter_addr and a.debugmsg_addr and not infra and not result.get("error") and ctr
+            and result["pm_counter_window_end"] is not None and result["pm_calls_in_window"] == 0
+            and set(ctr) != {str(result["pm_counter_window_end"])}):
+        failed.append("Canon counter at %s: samples %s, but the [PM] log says %d" % (
+            a.pm_counter_addr, ",".join(sorted(ctr)), result["pm_counter_window_end"]))
     if a.boot and a.debugmsg_addr and not infra and not result.get("error"):
         if result["ml_holds_window_end"] is None:
             failed.append("no ML [PS] message in the log by the window end (ML not started?)")
