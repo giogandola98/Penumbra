@@ -1,7 +1,7 @@
 #!/bin/bash
 # CI host-side driver for the camera scenarios (Forgejo job `emulation`, runs on the runner host).
 # For each camera in EMU_CAMS: fetch its ROMs into a private tmpfs dir, build the ML zips in the
-# ml-ci image, run ci/qemu/run_cam.sh in the ml-qemu image with the ROMs mounted read-only,
+# ml-ci image, run ci/qemu/run_cam.sh in the qemu-eos image with the ROMs mounted read-only,
 # then delete the ROMs. Cameras without ROMs are reported as SKIPPED; the script then exits 0.
 #
 # Usage (from the job workspace): src-checkout/ci/qemu/ci-emulation.sh

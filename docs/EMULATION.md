@@ -6,31 +6,41 @@ CPU leaves idle. Everything lives in `ci/qemu/`; CI runs it in the `emulation` j
 
 ## Pieces
 
+QEMU itself lives in the separate repo **QEMU-EOS-Optimized** (fork
+of qemu-eos `qemu-eos-v4.2.1`). Its CI builds qemu-eos from that repo's source, runs the plugin self-test,
+boots the 1100D to the Canon GUI with scripted menu scenarios, and publishes the image to the private
+container registry of a private organisation (CI variable `ROM_PKG_OWNER`). This repo only **pulls** that image.
+
 | File | Role |
 |---|---|
-| `ci/qemu/Containerfile` | Image `ml-qemu:<hash>`: qemu-eos branch `qemu-eos-v4.2.1` pinned at `4b667a1d3c08ab7a55835d15ddbd884fa754946d` (QEMU 4.2.1), `arm-softmmu` with TCG plugins and VNC, no GUI; upstream `libmagiclantern.so` plugin (DryosDebugMsg); ML's `magiclantern/` tooling; gcc, arm-none-eabi binutils, mtools, python3-pil |
-| `ci/qemu/plugins/wakeups.c` | TCG plugin: idle entries (WFI), IRQ/FIQ entries, instructions, halt time → JSON lines |
-| `ci/qemu/selftest/` | Bare-metal ARMv5 program + checks: verifies the plugin on a generic machine, no ROM needed |
-| `ci/qemu/make_sd_image.py` | Raw SD image from `platform/sd.qcow2.xz` + an ML zip (qemu-img + mtools; no guestmount/FUSE) |
+| `ci/qemu-image.txt` | The image used here, pinned by digest: `qemu-eos@sha256:…` (registry host = the CI server, owner = `ROM_PKG_OWNER`) |
+| `ci/qemu/pull-image.sh` | Pulls it on the CI host (`ROM_TOKEN` as read:package credential, throw-away authfile) |
+| image `/opt/qemu-eos` | `qemu-system-arm`, `qemu-img` (arm-softmmu, TCG plugins, VNC, no GUI); `plugins/libwakeups.so` (idle/IRQ counters, source in `src/plugins/`); upstream `libmagiclantern.so` (DryosDebugMsg); `QEMU_EOS_SHA` (source commit), `BUILD_PROFILE`; gcc, arm-none-eabi binutils, mtools, python3-pil |
+| `ci/qemu/make_sd_image.py` (+ `test_sd_image.sh`) | Raw SD image from `platform/sd.qcow2.xz` + an ML zip (qemu-img + mtools; no guestmount/FUSE) |
 | `ci/qemu/scenario.py` | Boots one scenario, takes screenshots, collects logs and plugin output |
-| `ci/qemu/run_cam.sh` (`run_eosm.sh`) | All scenarios for one camera + comparison table; `SKIPPED` without ROMs |
+| `ci/qemu/run_cam.sh` (`run_eosm.sh`) | All scenarios for one camera (in parallel by default) + comparison table; `SKIPPED` without ROMs |
 | `ci/qemu/fetch_roms.sh`, `ci-emulation.sh`, `check_rom_md5.sh` | CI side of the ROM handling below |
 | `tools/upload_roms.sh` | Maintainer helper: upload a camera's ROMs to the private package |
 
-The image tag is the hash of `ci/qemu/Containerfile`, so QEMU (about 10 min) is rebuilt only when that file
-changes. The plugin is compiled at job time (`build-plugin.sh`), so plugin changes cost seconds.
+Moved to QEMU-EOS-Optimized: the Containerfile, `plugins/wakeups.c`, `build-plugin.sh` and the bare-metal plugin
+self-test. Its `docs/PERFORMANCE.md` holds the benchmarks (boot-to-GUI, MIPS, plugin overhead, build flags).
+
+**Updating QEMU:** merge/push in QEMU-EOS-Optimized; its CI run prints, in the "Publish image" step, the line to
+put into `ci/qemu-image.txt` (`…/qemu-eos@sha256:<digest>`; tags `:<commit>` and `:main` exist too, but CI here
+only accepts a digest, so a re-pushed tag can never change what we test with). Push here and check that the
+`emulation` job is green and the comparison table did not move.
 
 ## Cameras and scenarios
 
 `CAM` selects the camera as qemu-eos names it; the ML platform is `platform/CAM.<fw>`
 (`EOSM` → `EOSM.202`, `1100D` → `1100D.105`). CI runs `EMU_CAMS="1100D EOSM"`.
-The 1100D (DIGIC 4) is the user's second body and validates the whole chain before EOS M ROMs exist.
+The 1100D (DIGIC 4) is the maintainer's second body and validates the whole chain before EOS M ROMs exist.
 
 | Scenario | Card | Camera bootflag | Meaning |
 |---|---|---|---|
 | `canon` | base image, no ML | off (`firmware=boot=0`) | Canon firmware idle baseline |
 | `ml-full` | `ML_PROFILE=full` zip (1100D: the only build) | on | upstream-equivalent ML |
-| `ml-photo` | `ML_PROFILE=photo` zip (EOSM only) | on | this fork's photo build |
+| `ml-photo` | `ML_PROFILE=photo` zip (EOSM only) | on | Penumbra's photo build |
 | `ml-hold` | `make POWERSAVE_HOLD=y` zip (1100D) | on | `ml-full` with counted powersave holds (`analysis/powersave-hold.md`) |
 
 Timeline per scenario (host time): boot `WARMUP_S` (40 s, not measured) → screenshot `boot.png` →
@@ -44,19 +54,19 @@ through the monitor every ~0.5 s.
 Outputs per scenario in `emu-out/<CAM>/<scenario>/`: `wakeups.json`, `tasks.json`, `result.json`, `qemu.log`
 (DryosDebugMsg + task switches), screenshots; `emu-out/<CAM>/comparison.md` holds the table.
 
-QEMU side vs ML side: `ci/qemu/Containerfile`, `ci/qemu/plugins/`, `ci/qemu/build-plugin.sh` and
-`ci/qemu/selftest/` (except `test_sd_image.sh`) only depend on QEMU and can move to the QEMU-EOS-Optimized repo;
-the rest uses this tree (platform dirs, stubs, `sd.qcow2.xz`, ML builds, ROM checksums).
+What stays here uses this tree (platform dirs, stubs, `sd.qcow2.xz`, ML builds, ROM checksums); everything that
+only depends on QEMU is in QEMU-EOS-Optimized.
 
 ## Metrics and their limits
 
-From `wakeups.c` (no ROM-specific addresses, so the same plugin serves every camera and the self-test):
+From `libwakeups.so` (no ROM-specific addresses, so the same plugin serves every camera and the self-test; all its
+counters are inline TCG adds emitted at translation time, so it does not slow the guest measurably):
 
 - **wakeups/s**: executions of `mcr p15,0,Rd,c7,c0,4` (the ARM926/946 wait-for-interrupt DryOS uses in its
   idle task), plus the other pre-v7 WFI encodings. Each idle entry ends with one wakeup.
 - **IRQ/s**: executions of the IRQ vector (0x18, or 0xFFFF0018 with high vectors). FIQ counted separately.
-- **insns/wakeup**: instructions executed between two consecutive WFIs, i.e. work per wakeup (mean; max also
-  reported). Counted per translation block, exact unless a block is cut short by a synchronous exception.
+- **insns/wakeup**: instructions executed between two consecutive WFIs, i.e. work per wakeup (mean; the max is
+  reported only with the plugin option `burst=on`, which ML's scenarios do not set). Counted per translation block, exact unless a block is cut short by a synchronous exception.
 - **busy ratio**: `1 - halted/elapsed` in host time. TCG runs slower than the real CPU, so this
   over-estimates busy time; compare it only between scenarios on the same runner. With `icount_shift=N`
   (and `-icount shift=N`) it is `insns·2^N ns / elapsed` instead; `-icount` forces single-threaded TCG,
@@ -100,43 +110,53 @@ What does not (qemu-eos limitations, not ML bugs):
 
 ### CI
 
-The `emulation` job always runs the plugin self-test. Camera scenarios run only when that camera's ROMs
-are in the package; otherwise the step prints `SKIPPED: no ROM for <CAM>` and succeeds.
+The `emulation` job pulls the pinned image (seconds; no QEMU build here any more) and runs the SD tooling test.
+Camera scenarios run only when that camera's ROMs are in the package; otherwise the step prints
+`SKIPPED: no ROM for <CAM>` and succeeds. A camera's scenarios run at once (`PARALLEL=0` to serialise): each is
+a fixed wall-clock timeline, so the camera takes one timeline instead of one per scenario.
+The timeline starts when QEMU's monitor socket appears (`qemu_start_s` in `result.json`), not when QEMU is
+launched: the plugin times its window from its own load, and a cold start of the freshly pulled binary on the busy
+runner took up to ~12 s, which used to shorten the 30 s window (to 18-25 s in runs 34, 38, 40).
+`plugin_clock_lag_s` (quit time vs the plugin's last timestamp) checks that both clocks agree.
 Results are uploaded as artifact `ml-optimized-emulation` (tables, JSON, logs, screenshots; never ROMs,
 disk images or binaries).
 
 ### Locally
 
-Needs podman (not available on the dev host; use CI there). With podman:
+Needs podman (the CI runner has it). With podman and a `read:package` token:
 
-    podman build --network=host -t ml-qemu -f ci/qemu/Containerfile ci/qemu
-    podman run --rm -v "$PWD":/work -w /work ml-qemu ci/qemu/selftest/selftest.sh
+    podman login --tls-verify=false <forgejo-host>             # token as password
+    IMG=$(grep -v '^#' ci/qemu-image.txt); podman pull --tls-verify=false "$IMG"
+    podman run --rm -v "$PWD":/work -w /work "$IMG" ci/qemu/test_sd_image.sh emu-out/sd-tooling
     # camera run: ROMs in ~/roms/<CAM>/, ML zip built with ci/build.sh or make
     podman run --rm --tmpfs /tmp -v "$PWD":/work -v ~/roms:/roms:ro -w /work \
-        -e CAM=1100D -e ML_ZIP_FULL=/work/platform/1100D.105/build/magiclantern.zip ml-qemu ci/qemu/run_cam.sh
+        -e CAM=1100D -e ML_ZIP_FULL=/work/platform/1100D.105/build/magiclantern.zip "$IMG" ci/qemu/run_cam.sh
 
 Interactive use (GUI via VNC): run `qemu-system-arm` from the image with `-vnc :1` instead of
 `-display none` (see the command `scenario.py` prints), and send keys through the monitor (`sendkey`).
 
 ## ROM handling
 
-ROM dumps (ROM0.BIN, ROM1.BIN, SFDATA.BIN) are Canon firmware read from the user's own camera.
+ROM dumps (ROM0.BIN, ROM1.BIN, SFDATA.BIN) are Canon firmware read from the maintainer's own camera.
 They are **never** committed, put in artifacts, printed in logs, or stored in images.
 
-- **Storage**: Forgejo generic package `canon-rom` owned by the **private** org `<private-org>`, version
-  `<CAM>-<FW>` (`1100D-105`, `EOSM-202`). The user `root` is public, and packages inherit their owner's
-  visibility, so a package under `root` would be anonymously downloadable; anonymous access to
-  `<private-org>` returns 401.
+- **Storage**: a Forgejo generic package `canon-rom` in a private package registry, version
+  `<CAM>-<FW>` (`1100D-105`, `EOSM-202`). Packages inherit their owner's visibility, so the owner must be a
+  **private** organisation; a package under a public user or org would be anonymously downloadable. The
+  owner's name is the CI variable `ROM_PKG_OWNER`; the server is the CI server itself (`GITHUB_SERVER_URL`).
 - **Checksums**: `docs/firmware/rom-md5.txt` (`<CAM>-<FW> <FILE> <md5>`), safe to commit. CI verifies the
   sha256 the server reports and these MD5s; a mismatch fails the job.
-- **Upload** (maintainer, local): `tools/upload_roms.sh 1100D ~/Documents/roms/1100D` (`--replace` to
-  overwrite). It uses `<credentials-file>`, refuses a public owner, verifies the stored sha256
+- **Upload** (maintainer, local): `ROM_PKG_OWNER=<private org> tools/upload_roms.sh 1100D <dir with the dumps>`
+  (`--replace` to overwrite). Credentials come from the environment or from a file named by
+  `FORGEJO_CREDENTIALS`, kept outside the repository. It refuses a public owner, verifies the stored sha256
   and prints the lines for `rom-md5.txt`.
-- **CI access**: repo secret `ROM_TOKEN` on `root/ML-Optimized`, a personal access token with only the
-  `read:package` scope, from a user that is a member of `<private-org>`. Create it in Forgejo: user settings →
-  Applications → Generate token → scope `package: read`; then repo → Settings → Actions → Secrets → add
-  `ROM_TOKEN`. Without it the job token is tried, which cannot read another owner's private packages, so the
-  scenarios are SKIPPED.
+- **CI access**: repo secret `ROM_TOKEN`, a personal access token with only the `read:package` scope, from a
+  user that is a member of the private owner org; and repo variable `ROM_PKG_OWNER` (the org's name). Create
+  the token in Forgejo: user settings → Applications → Generate token → scope `package: read`; then repo →
+  Settings → Actions → Secrets → add `ROM_TOKEN`, and Variables → add `ROM_PKG_OWNER`. Without the token the
+  job token is tried, which cannot read another owner's private packages; without the variable nothing is
+  fetched. In both cases the scenarios are SKIPPED. The same token pulls the
+  QEMU image, which is published as a private package of the same owner.
 - **In the job** (`ci-emulation.sh`, on the runner host): ROMs go to a fresh `mktemp -d /dev/shm/ml-roms.*`
   (tmpfs, mode 700), the token reaches curl through a mode-600 header file (never argv), the directory is
   bind-mounted **read-only** into the sandboxed container (`--network=none`, no capabilities), and is deleted

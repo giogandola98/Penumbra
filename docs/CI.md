@@ -1,12 +1,12 @@
 # CI
 
-CI runs on the self-hosted Forgejo (`<forgejo-server>`, repo `root/ML-Optimized`), never on GitHub Actions.
+CI runs on a self-hosted Forgejo instance (Forgejo Actions), not on GitHub Actions.
 Workflow: `.forgejo/workflows/ci.yml`, triggered on push and pull_request.
 
 ## How it works
 
-The runner `linux-podman-105` (label `linux-podman`) uses the *host* executor (Rocky 9, root, no node, no
-`container:` support) but has podman. So the job:
+The runner (label `linux-podman`) uses the *host* executor (no node, no `container:` support) but has
+podman. So the job:
 
 1. fetches the commit with git (no `actions/checkout`, which needs node);
 2. builds `ci/Containerfile` (Debian bookworm-slim pinned by digest, Arm GNU Toolchain 12.2.rel1 with
@@ -14,12 +14,12 @@ The runner `linux-podman-105` (label `linux-podman`) uses the *host* executor (R
    Containerfile, so it is rebuilt only when that file changes (first run ~6 min, later runs ~1.5 min);
 3. runs inside the image: `ci/build.sh` (EOSM.202, `FATAL_WARNINGS=y`), `ci/host-tests.sh`
    (`make -C tests/host`, or "no host tests yet"), `ci/cppcheck.sh` (report only, never fails);
-4. uploads `magiclantern.zip`, `build-report.txt`, `cppcheck-report.txt` as artifact `ml-optimized-eosm202`
+4. uploads `magiclantern.zip`, `build-report.txt`, `cppcheck-report.txt` as artifact `ml-optimized-eosm202` (artifact names keep the repository's old name for now)
    with `ci/upload-artifact.sh` (v4 protocol over curl/python, because JS actions cannot run without node).
 
 ## Run locally
 
-    ci/build.sh          # sources ~/.local/opt/ml-env.sh if the toolchain is not on PATH
+    ci/build.sh          # needs arm-none-eabi-gcc on PATH (or a local env script, see ci/build.sh)
     ci/host-tests.sh
     ci/cppcheck.sh
 

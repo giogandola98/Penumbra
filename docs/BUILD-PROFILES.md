@@ -7,8 +7,9 @@
 | `photo` (default) | `make` | Photo-only build; video, audio and dev features removed. |
 | `full` | `make ML_PROFILE=full` | Upstream-equivalent build (identical autoexec.bin size to the pre-profile baseline). |
 
+Toolchain: Arm GNU Toolchain 12.2.rel1 (`arm-none-eabi-gcc`) on `PATH`, as in `ci/Containerfile`.
+
 ```
-. ~/.local/opt/ml-env.sh
 cd platform/EOSM.202 && make clean && make -j4 FATAL_WARNINGS=y            # photo
 cd platform/EOSM.202 && make clean && make -j4 FATAL_WARNINGS=y ML_PROFILE=full
 ```
