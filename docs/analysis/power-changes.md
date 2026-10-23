@@ -103,3 +103,63 @@ With the display off it was already 2/s.
   That is far below the powersave countdown resolution (seconds).
 - On hardware, check quick zoom and focus-box speed in playback.
   Both are key-driven and get a direct wakeup, so no change is expected.
+
+## 3. Event-driven tasks wait forever (audit row 6). Photo only
+
+**Change.**
+`tasks.h` adds `IDLE_WAIT_MS(ms)`: 0 (wait forever) in the photo profile, `ms` otherwise.
+It also adds `WOKEN_FOR_SHUTDOWN()`: `ml_shutdown_requested` in the photo profile, constant 0 otherwise.
+These waits use the new macro:
+
+| Task | Wait | Old timeout | Woken by |
+|---|---|---|---|
+| `module_task` | `msg_queue_receive(module_mq)` (`module.c`) | 200 ms | offline-string load/unload messages |
+| `menu_redraw_task` | `msg_queue_receive(menu_redraw_queue)` (`menu.c`) | 500 ms | `menu_redraw()` and the `menu_redraw_full()` posts |
+| `notifybox_task` | `take_semaphore(notify_box_show_sem)` (`notify_box.c`) | 500 ms | `NotifyBox()` |
+| `focus_task` | `take_semaphore(focus_task_sem)` (`focus.c`) | 500 ms | follow-focus and rack-focus requests |
+| `menu_task` | `take_semaphore(gui_sem)` (`menu.c`) | 500 ms (when closed) | menu toggle requests |
+
+`menu_task` waits forever only when **all** of these hold: the menu is closed, no key repeat is active, arrow shortcuts are inactive, no menu-flag reload is pending, and no autosave is pending (`config_autosave && (config_dirty || menu_flags_save_dirty)`).
+Pending work keeps the old 500 ms poll.
+So the autosave after closing the menu, and the autosave deferred while recording, run at the same time as before.
+**The autosave was therefore not moved into `menu_close()`.**
+`menu_close()` runs before the menu is fully gone, and it would also need the existing "not while recording" deferral, which the poll already handles.
+A menu-flag reload requested by `menu_add()` while the task sleeps (for example, a module adding menus late) now runs just before `menu_open()`.
+
+**Shutdown.** `ml_shutdown()` (`tasks.c`) sets `ml_shutdown_requested` and then calls `tasks_wakeup_for_shutdown()`.
+That function posts a dummy message to `module_mq` and `menu_redraw_queue`, and gives `gui_sem`, `notify_box_show_sem` and `focus_task_sem`.
+Each task checks `WOKEN_FOR_SHUTDOWN()` right after it wakes, before it acts on the message.
+It then leaves its `TASK_LOOP`, just as it used to after a timeout.
+This matters most for `menu_task`, where a given `gui_sem` would otherwise open the menu during shutdown.
+`config_save_at_shutdown()` and `module_shutdown()` still run synchronously in `ml_shutdown()`, so they do not depend on these tasks.
+
+**Gain.** module 5 + menu_redraw 2 + notifybox 2 + focus 2 + menu (closed) 2 = **−13 wakeups/s**.
+They are now 0/s at idle.
+
+**Profiles.** Photo only.
+Full compiles the same timeouts and a constant-false check; its `autoexec.bin` size is unchanged (455,232 B).
+
+**Verify (QEMU).**
+1. Wakeups (method 0), idle photo screen, 30 s: `module_task`, `menu_redraw_task`, `notifybox_task`, `focus_task` and `menu_task` show 0 dispatches after boot completes.
+   Parent commit: 5, 2, 2, 2 and 2 per second.
+2. Menu: open the ML menu (`sendkey` the menu/trash key used by EOSM).
+   It opens at once and redraws.
+   Change a setting and close the menu.
+   Within about 0.5 s, `config_save` is hit (GDB breakpoint) and `ML/SETTINGS/MAGIC.CFG` changes on the SD image.
+   After that `menu_task` returns to 0 dispatches/s.
+3. Menu flags: star an item in the menu, close the menu, and expect `MENUS.CFG` to be written.
+   Load a module, open the menu, and check that its hidden/starred flags are applied on first display.
+4. NotifyBox: trigger any notify, for example the screenshot menu item.
+   The box appears and is erased after its timeout.
+5. Shutdown test (§0): break on `menu_wakeup_for_shutdown`, `notifybox_wakeup_for_shutdown`, `focus_task_wakeup_for_shutdown` and `module_task_wakeup_for_shutdown`.
+   All four are hit.
+   With `-d tasks` (or `task_dispatch` counting), the five tasks run once more and exit; the menu does **not** open.
+   `module_shutdown()` completes (lockfile removed), and QEMU powers off.
+
+**Risks.**
+- A config change made while the menu is closed is saved at the next menu close or at shutdown (`config_save_at_shutdown`), instead of within 0.5 s.
+  Examples are a Lua script calling `menu_set` or the quick-access menu items.
+  A battery pull (`PROP_ABORT`, which never saves) in that window loses the change.
+- If arrow shortcuts are active, key repeat keeps the old 500 ms poll (no regression, and no gain in that mode).
+- A future task that adds a `give_semaphore(gui_sem)` for anything other than a toggle would be treated as a toggle.
+  This was already true before.

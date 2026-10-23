@@ -745,8 +745,8 @@ focus_task( void* unused )
 {
     TASK_LOOP
     {
-        int err = take_semaphore( focus_task_sem, 500 );
-        if (err) continue;
+        int err = take_semaphore( focus_task_sem, IDLE_WAIT_MS(500) );
+        if (err || WOKEN_FOR_SHUTDOWN()) continue;
         
         while (lens_info.job_state) msleep(100);
 
@@ -808,6 +808,13 @@ focus_task( void* unused )
 }
 
 TASK_CREATE( "focus_task", focus_task, 0, 0x18, 0x1000 );
+
+#ifdef CONFIG_PROFILE_PHOTO
+void focus_task_wakeup_for_shutdown()
+{
+    if (focus_task_sem) give_semaphore(focus_task_sem);
+}
+#endif
 
 static MENU_UPDATE_FUNC(follow_focus_print)
 {

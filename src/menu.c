@@ -4939,8 +4939,8 @@ menu_redraw_task()
     {
         /* this loop will only receive redraw messages */
         int msg;
-        int err = msg_queue_receive(menu_redraw_queue, (struct event**)&msg, 500);
-        if (err) {
+        int err = msg_queue_receive(menu_redraw_queue, (struct event**)&msg, IDLE_WAIT_MS(500));
+        if (err || WOKEN_FOR_SHUTDOWN()) {
             //DryosDebugMsg(0, 15, "err from queue, continuing anyway: 0x%x", err);
             //SJE FIXME - we see 0x9 errors.
             // There looks to be only one path where msg_queue_receive() returns 9,
@@ -4986,6 +4986,15 @@ menu_redraw_task()
 }
 
 TASK_CREATE( "menu_redraw_task", menu_redraw_task, 0, 0x1a, 0x8000 );
+
+#ifdef CONFIG_PROFILE_PHOTO
+/* menu_task and menu_redraw_task may be waiting forever (IDLE_WAIT_MS) */
+void menu_wakeup_for_shutdown()
+{
+    if (menu_redraw_queue) msg_queue_post(menu_redraw_queue, MENU_REDRAW);
+    if (gui_sem) give_semaphore(gui_sem);
+}
+#endif
 
 void
 menu_redraw()
@@ -5774,7 +5783,28 @@ menu_task( void* unused )
                 :   /* otherwise (no keys held) */
                     (transparent_menu_magic_zoom ? 2000 : 500 );
 
+        #ifdef CONFIG_PROFILE_PHOTO
+        /* With the menu closed, the timeout below only runs deferred work
+         * (flag reload, config autosave) and key repeat for arrow shortcuts.
+         * When none of that is pending, sleep until a menu toggle request.
+         * Pending work keeps the 500 ms poll, so autosave after closing the
+         * menu (or after recording ends) happens exactly as before. */
+        extern int config_autosave;
+        if (!menu_shown && !keyrepeat && !arrow_keys_shortcuts_active() &&
+            !menu_flags_load_dirty &&
+            !(config_autosave && (config_dirty || menu_flags_save_dirty)))
+        {
+            dt = 0;
+        }
+        #endif
+
         int rc = take_semaphore( gui_sem, dt );
+
+        if (WOKEN_FOR_SHUTDOWN())
+        {
+            /* woken by ml_shutdown(), not a toggle request */
+            break;
+        }
 
         if( rc == 0 )
         {
@@ -5785,6 +5815,14 @@ menu_task( void* unused )
             }
             else
             {
+                #ifdef CONFIG_PROFILE_PHOTO
+                /* a module may have added menus while we were waiting */
+                if (menu_flags_load_dirty)
+                {
+                    config_menu_reload_flags();
+                    menu_flags_load_dirty = 0;
+                }
+                #endif
                 menu_open();
                 initial_mode = shooting_mode;
             }

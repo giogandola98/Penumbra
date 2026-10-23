@@ -26,8 +26,8 @@ static void NotifyBox_task(void* priv)
     TASK_LOOP
     {
         // wait until some other task asks for a notification
-        int err = take_semaphore(notify_box_show_sem, 500);
-        if (err)
+        int err = take_semaphore(notify_box_show_sem, IDLE_WAIT_MS(500));
+        if (err || WOKEN_FOR_SHUTDOWN())
             continue;
         
         if (!notify_box_timeout) 
@@ -55,6 +55,13 @@ static void NotifyBox_task(void* priv)
 }
 
 TASK_CREATE( "notifybox_task", NotifyBox_task, 0, 0x1b, 0x1000 );
+
+#ifdef CONFIG_PROFILE_PHOTO
+void notifybox_wakeup_for_shutdown()
+{
+    if (notify_box_show_sem) give_semaphore(notify_box_show_sem);
+}
+#endif
 
 void NotifyBoxHide()
 {

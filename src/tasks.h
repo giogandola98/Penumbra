@@ -384,6 +384,18 @@ extern int ml_shutdown_requested;
 
 #define TASK_LOOP for (int k = 0; !ml_shutdown_requested ; k++)
 
+/* Timeout for tasks that are woken by a message/semaphore and only time out
+ * to re-check ml_shutdown_requested. The photo profile waits forever (0)
+ * and ml_shutdown() wakes these tasks instead (tasks_wakeup_for_shutdown);
+ * other builds keep the upstream polling period. */
+#ifdef CONFIG_PROFILE_PHOTO
+#define IDLE_WAIT_MS(ms) 0
+#define WOKEN_FOR_SHUTDOWN() (ml_shutdown_requested)
+#else
+#define IDLE_WAIT_MS(ms) (ms)
+#define WOKEN_FOR_SHUTDOWN() 0
+#endif
+
 
 const char * get_task_name_from_id(int id);
 int get_current_task_id();
