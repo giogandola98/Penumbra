@@ -126,12 +126,29 @@ What does not (qemu-eos limitations, not ML bugs):
 
 The `emulation` job pulls the pinned image (seconds; no QEMU build here any more) and runs the SD tooling test.
 Camera scenarios run only when that camera's ROMs are in the package; otherwise the step prints
-`SKIPPED: no ROM for <CAM>` and succeeds. A camera's scenarios run at once (`PARALLEL=0` to serialise): each is
-a fixed wall-clock timeline, so the camera takes one timeline instead of one per scenario.
+`SKIPPED: no ROM for <CAM>` and succeeds. A camera's scenarios run at once when the runner is not loaded
+(`PARALLEL=auto`: 1-min load average + scenarios <= 1.5 x CPUs; `PARALLEL=1`/`0` to force), so the camera takes
+one timeline instead of one per scenario; on a loaded runner they run one after the other.
 The timeline starts when QEMU's monitor socket appears (`qemu_start_s` in `result.json`), not when QEMU is
 launched: the plugin times its window from its own load, and a cold start of the freshly pulled binary on the busy
 runner took up to ~12 s, which used to shorten the 30 s window (to 18-25 s in runs 34, 38, 40).
 `plugin_clock_lag_s` (quit time vs the plugin's last timestamp) checks that both clocks agree.
+
+**Robust under load.** Every phase is anchored to the guest, not to a fixed delay (run 55: QEMU took 32 s to
+come up and the boot was so slow that the "40 s" window measured a half-booted camera: no ML yet, no monitor
+samples, ML holds `None`, deep-sleep checks failed on `ml-hold`):
+- *ready*: the window starts at `max(WARMUP_S, ready + 10 s)`, where ready is the DryosDebugMsg log showing
+  `TurnOnDisplay finish` (1100D Canon GUI up) and, for ML builds, `[PS] release boot` (ML's init over); other
+  models use two identical non-blank screenshots. `ready_s` / `window_start_s` are in `result.json`; on an idle
+  runner the window is where it always was (40 s).
+- *display off* is timed from Canon's `TurnOffDisplay` log line after the key; *wake* and *ML menu* screenshots
+  are retaken (up to 60 s) until the screen changes; the config save waits for its FIO release.
+- the monitor client waits for QEMU's prompt before sending a command and retries the connection.
+- missing evidence is never a pass: too few monitor samples (< 1/4 of one per 0.5 s), a screendump that never
+  completes, no ready marker within 300 s or no monitor within 180 s end the scenario as
+  `INFRASTRUCTURE TIMEOUT` (exit 3, distinct from a functional failure). `run_cam.sh` reruns such a scenario
+  once, alone; a second timeout fails the job as infrastructure. A missing `[PM]`/`[PS]` value at the window
+  end, an empty counter sample set or a scenario without window rates is a failure (`compare.py` exit 1).
 Results are uploaded as artifact `ml-optimized-emulation` (tables, JSON, logs, screenshots; never ROMs,
 disk images or binaries).
 

@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
 """Boot one Canon camera scenario in qemu-eos headless and measure it.
 
-Timeline (host time, which QEMU's virtual clock follows without -icount):
-  0 .. warmup        boot (Canon firmware, then ML if --boot); not measured
-  warmup .. +measure measurement window: wakeups plugin summary, task switches from `-d tasks`
+Timeline (host time, which QEMU's virtual clock follows without -icount). Every phase is anchored to
+what the emulator has actually done, not to a fixed delay from launch, so a loaded runner (slow QEMU
+start, slow boot, slow monitor) shifts the timeline instead of measuring the wrong thing:
+  t0                 QEMU's monitor socket appears (QEMU is up, plugins loaded)
+  ready              the guest reached its idle state: every --ready-marker seen in the DryosDebugMsg
+                     log (e.g. Canon's display on, ML's boot hold released), else a stable screen
+  window start       max(warmup, ready + settle) after t0; the window then lasts --measure seconds:
+                     wakeups plugin rates, task switches from `-d tasks`, monitor PC / counter samples
   end                screenshot via the monitor, then `quit` (the plugin writes its summary at exit)
 
 Then, optionally (--display-off-s, 1100D): the display-off idle segment (deep sleep, see
-docs/analysis/powersave-hold.md), a key to wake the camera, and for ML builds the ML menu and a
-config save.
+docs/analysis/powersave-hold.md) timed from the display actually turning off, a key to wake the
+camera (the screen must change), and for ML builds the ML menu and a config save.
+
+If the emulator never gets somewhere (no monitor, no ready marker, monitor starved, screendump or
+samples missing) the run ends with "INFRASTRUCTURE TIMEOUT" and exit code 3: no functional verdict,
+and never a pass. Functional check failures exit 1.
 
 Writes into OUT_DIR: qemu.log (DryosDebugMsg + task switches + QEMU messages), wakeups.json,
 tasks.json (task switches per task inside the window), boot.png / idle.png, result.json.
@@ -24,51 +33,82 @@ import sys
 import time
 
 QEMU_EOS = os.environ.get("QEMU_EOS", "/opt/qemu-eos")
+EXIT_INFRA = 3
 
 
-def monitor_cmd(path, cmd, timeout=10.0):
-    """Send one HMP command over the monitor socket and return what QEMU printed back."""
+class InfraTimeout(Exception):
+    """The emulator did not get where the timeline needs it in time: no functional verdict possible."""
+
+
+def _monitor_once(path, cmd, timeout):
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(timeout)
-    s.connect(path)
-    buf = b""
     try:
-        buf += s.recv(4096)                       # banner + prompt
+        s.connect(path)
+        buf = b""
+        while b"(qemu)" not in buf:               # banner + prompt: QEMU accepted this client
+            chunk = s.recv(4096)                  # socket.timeout (an OSError) if QEMU is starved
+            if not chunk:
+                raise ConnectionError("monitor closed before its prompt")
+            buf += chunk
         s.sendall(cmd.encode() + b"\n")
         deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline and buf.count(b"(qemu)") < 2:
-            chunk = s.recv(4096)
-            if not chunk:
-                break
-            buf += chunk
-    except socket.timeout:
-        pass
+        try:
+            while time.monotonic() < deadline and buf.count(b"(qemu)") < 2:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+        except socket.timeout:
+            pass                                  # the command was sent; its output may be partial
+        return buf.decode(errors="replace")
     finally:
         s.close()
-    return buf.decode(errors="replace")
 
 
-def screenshot(mon, out_png):
+def monitor_cmd(path, cmd, timeout=10.0, tries=4):
+    """Send one HMP command over the monitor socket and return what QEMU printed back.
+    The command is only sent once QEMU's prompt arrived; connecting is retried (QEMU serves one monitor
+    client at a time and is slow to accept on a loaded host). InfraTimeout if it never answers."""
+    last = None
+    for i in range(tries):
+        try:
+            return _monitor_once(path, cmd, timeout)
+        except OSError as e:
+            last = e
+            time.sleep(min(2.0, 0.25 * 2 ** i))
+    raise InfraTimeout("QEMU monitor did not answer '%s' (%d tries, %.0f s each): %s" % (cmd, tries, timeout, last))
+
+
+def screenshot(mon, out_png, wait_s=20.0):
+    """Screendump to out_png; None if QEMU never produced it (the caller decides whether that matters)."""
     ppm = out_png[:-4] + ".ppm"
-    try:
-        monitor_cmd(mon, "screendump " + ppm)
-    except OSError as e:
-        print("screenshot failed: %s" % e, file=sys.stderr)
-        return None
-    for _ in range(50):                           # screendump completes asynchronously
-        if os.path.exists(ppm) and os.path.getsize(ppm) > 0:
-            break
-        time.sleep(0.1)
-    try:
-        from PIL import Image
-        time.sleep(0.2)
-        with Image.open(ppm) as im:
-            im.save(out_png)
-        os.remove(ppm)
-        return out_png
-    except Exception as e:                        # a missing screenshot must not lose the metrics
-        print("screenshot failed: %s" % e, file=sys.stderr)
-        return None
+    from PIL import Image
+    for attempt in range(2):
+        try:
+            os.remove(ppm)
+        except FileNotFoundError:
+            pass
+        try:
+            monitor_cmd(mon, "screendump " + ppm)
+        except InfraTimeout as e:
+            print("screenshot %s: %s" % (os.path.basename(out_png), e), file=sys.stderr)
+            continue
+        deadline = time.monotonic() + wait_s       # screendump completes asynchronously
+        while time.monotonic() < deadline:
+            if os.path.exists(ppm) and os.path.getsize(ppm) > 0:
+                try:
+                    with Image.open(ppm) as im:
+                        im.load()                 # fails while the file is still being written
+                        im.save(out_png)
+                    os.remove(ppm)
+                    return out_png
+                except Exception:
+                    pass
+            time.sleep(0.2)
+        print("screenshot %s: no complete screendump after %.0f s (attempt %d)" % (
+            os.path.basename(out_png), wait_s, attempt + 1), file=sys.stderr)
+    return None
 
 
 def frame_hash(png):
@@ -83,21 +123,92 @@ def frame_hash(png):
         return None
 
 
+def frame_uniform(png):
+    try:
+        from PIL import Image
+        with Image.open(png) as im:
+            lo, hi = zip(*im.convert("RGB").getextrema())
+            return lo == hi
+    except Exception:
+        return True
+
+
+class LogTail:
+    """Incremental search of QEMU's log (DryosDebugMsg lines) from a byte offset."""
+
+    def __init__(self, path, start=0):
+        self.path, self.pos, self.tail = path, start, ""
+
+    def find(self, pattern):
+        """True once `pattern` appeared after the start offset."""
+        with open(self.path, "rb") as f:
+            f.seek(self.pos)
+            data = f.read()
+        self.pos += len(data)
+        text = self.tail + re.sub(r"\x1b\[[0-9;]*m", "", data.decode(errors="replace"))
+        if re.search(pattern, text):
+            return True
+        self.tail = text[-512:]
+        return False
+
+
+def wait_log(log, patterns, since, timeout, q):
+    """Seconds until every regex in `patterns` appeared in the log after byte offset `since`, None on timeout."""
+    t = time.monotonic()
+    pending = {p: LogTail(log, since) for p in patterns}
+    while True:
+        for p in list(pending):
+            if pending[p].find(p):
+                del pending[p]
+        if not pending:
+            return time.monotonic() - t
+        if q.poll() is not None:
+            raise RuntimeError("QEMU exited with code %s (see qemu.log)" % q.returncode)
+        if time.monotonic() - t > timeout:
+            return None
+        time.sleep(0.5)
+
+
+def wait_screen(mon, out_png, differs_from, min_s, timeout, q):
+    """Screenshot after at least min_s, then again until the frame differs from `differs_from` (a hash)
+    or `timeout` passed. Returns the last screenshot path (None if screendump never worked)."""
+    time.sleep(min_s)
+    t = time.monotonic()
+    while True:
+        png = screenshot(mon, out_png)
+        if differs_from is None or (png and frame_hash(png) != differs_from) or time.monotonic() - t > timeout:
+            return png
+        if q.poll() is not None:
+            return png
+        time.sleep(1)
+
+
 def sample(mon, end, pm_addr):
-    """Until monotonic time `end`: guest PC and Canon's power-save counter every ~0.5 s via the monitor."""
+    """Until monotonic time `end`: guest PC and Canon's power-save counter every ~0.5 s via the monitor.
+    Returns (pcs, ctr, attempts); a starved monitor shows up as attempts >> samples."""
     pcs, ctr = {}, {}
+    attempts = 0
     while time.monotonic() < end - 0.5:
-        m = re.search(r"R15=([0-9a-f]{8})", monitor_cmd(mon, "info registers", timeout=2))
-        if m:
-            pcs[m.group(1)] = pcs.get(m.group(1), 0) + 1
-        if pm_addr:
-            m = re.search(r":\s*0x([0-9a-f]+)", monitor_cmd(mon, "xp /1wx " + pm_addr, timeout=2))
+        attempts += 1
+        try:
+            m = re.search(r"R15=([0-9a-f]{8})", monitor_cmd(mon, "info registers", timeout=5, tries=2))
             if m:
-                v = str(int(m.group(1), 16))
-                ctr[v] = ctr.get(v, 0) + 1
+                pcs[m.group(1)] = pcs.get(m.group(1), 0) + 1
+            if pm_addr:
+                m = re.search(r":\s*0x([0-9a-f]+)", monitor_cmd(mon, "xp /1wx " + pm_addr, timeout=5, tries=2))
+                if m:
+                    v = str(int(m.group(1), 16))
+                    ctr[v] = ctr.get(v, 0) + 1
+        except InfraTimeout as e:
+            print("sample: %s" % e, file=sys.stderr)
         time.sleep(min(0.5, max(0, end - time.monotonic())))
     time.sleep(max(0, end - time.monotonic()))
-    return pcs, ctr
+    return pcs, ctr, attempts
+
+
+def enough_samples(n, seconds):
+    """A monitor sample is taken every ~0.5 s; fewer than a quarter of those means the monitor was starved."""
+    return n >= max(5, int(seconds / 0.5 / 4))
 
 
 def top(pcs, n=10):
@@ -198,6 +309,19 @@ def main():
     ap.add_argument("--active-hold", default="",
                     help="ML scenarios: this ML hold stays taken for the whole run (e.g. intervalometer), "
                          "so ML's holds are expected >= 1 instead of 0")
+    ap.add_argument("--ready-marker", action="append", default=[],
+                    help="regex that the DryosDebugMsg log must show before the window can start (repeatable; "
+                         "e.g. Canon's display on, ML's boot hold released). Without one (or without "
+                         "--debugmsg-addr): two identical, non-blank screenshots in a row")
+    ap.add_argument("--settle", type=float, default=10,
+                    help="the window starts at least this long after the guest was ready")
+    ap.add_argument("--start-timeout", type=float, default=180, help="QEMU monitor must appear within this")
+    ap.add_argument("--ready-timeout", type=float, default=300,
+                    help="the guest must be ready within this many seconds of QEMU being up")
+    ap.add_argument("--step-timeout", type=float, default=60,
+                    help="display off / wake / menu: how long to wait for the guest to react to a key")
+    ap.add_argument("--display-off-marker", default="TurnOffDisplay",
+                    help="log regex showing the display-off key took effect (the idle segment is timed from it)")
     ap.add_argument("--warmup", type=float, default=40)
     ap.add_argument("--measure", type=float, default=30)
     ap.add_argument("--out", required=True)
@@ -238,53 +362,107 @@ def main():
     result = {"cam": a.cam, "boot_ml": a.boot, "warmup_s": a.warmup, "measure_s": a.measure}
     log_start = log_end = 0
     menu_start = menu_end = 0
+    win0 = a.warmup                                # window start, seconds after t0 (plugin time)
     t_quit = None
     try:
-        for _ in range(600):
-            if os.path.exists(mon) or q.poll() is not None:
-                break
+        while not os.path.exists(mon) and q.poll() is None and time.monotonic() - t0 < a.start_timeout:
             time.sleep(0.1)
         if q.poll() is not None:
             raise RuntimeError("QEMU exited early with code %s (see qemu.log)" % q.returncode)
         if not os.path.exists(mon):
-            raise RuntimeError("QEMU monitor did not appear in 60 s")
+            raise InfraTimeout("QEMU monitor did not appear within %.0f s of launch" % a.start_timeout)
         # The timeline starts when QEMU is up, not at Popen: QEMU loads its plugins (whose window is
         # timed from their load) just before it creates the monitor socket, and a cold start of the
-        # binary on a busy runner took ~10 s, which used to cut the measurement window by as much.
+        # binary on a busy runner took 10-30 s.
         result["qemu_start_s"] = round(time.monotonic() - t0, 2)
         t0 = time.monotonic()
 
-        time.sleep(max(0, a.warmup - (time.monotonic() - t0)))
+        # Wait for the guest to be idle, however long the boot takes on this host: a fixed delay
+        # measured half a boot on a loaded runner (no ML yet at the window end, holds still taken).
+        markers = a.ready_marker if a.debugmsg_addr else []
+        if markers:
+            if wait_log(log, markers, 0, a.ready_timeout, q) is None:
+                missing = [m for m in markers if not LogTail(log).find(m)]
+                raise InfraTimeout("guest not ready %.0f s after QEMU start: no %s in the log" % (
+                    a.ready_timeout, " / ".join("'%s'" % m for m in missing)))
+        else:
+            prev = None
+            while True:
+                png = screenshot(mon, os.path.join(a.out, "ready.png"))
+                h = frame_hash(png)
+                if h and h == prev and not frame_uniform(png):
+                    break
+                prev = h
+                if time.monotonic() - t0 > a.ready_timeout:
+                    raise InfraTimeout("screen not stable %.0f s after QEMU start" % a.ready_timeout)
+                time.sleep(2)
+            try:
+                os.remove(os.path.join(a.out, "ready.png"))
+            except FileNotFoundError:
+                pass
+        result["ready_s"] = round(time.monotonic() - t0, 2)
+        win0 = max(a.warmup, result["ready_s"] + a.settle)
+        result["window_start_s"] = round(win0, 2)
+        if win0 > a.warmup:
+            print("guest ready after %.1f s: window starts at %.1f s instead of %.0f s" % (
+                result["ready_s"], win0, a.warmup), flush=True)
+
+        time.sleep(max(0, win0 - (time.monotonic() - t0)))
         log_start = os.path.getsize(log)
         result["boot_png"] = screenshot(mon, os.path.join(a.out, "boot.png"))
         # Sample the guest PC through the monitor during the window: a ROM-independent profile that
         # shows where the CPU spends its time (e.g. an idle loop that spins instead of sleeping).
         # Canon's power-save counter is sampled the same way: a cross-check of the exact count of its
         # changes, which comes from the [PM] messages Canon logs on every Disable/EnablePowerSave.
-        pcs, ctr = sample(mon, t0 + a.warmup + a.measure, a.pm_counter_addr)
+        pcs, ctr, tries = sample(mon, t0 + win0 + a.measure, a.pm_counter_addr)
         result["pc_samples"] = sum(pcs.values())
+        result["sample_attempts"] = tries
         result["top_pcs"] = top(pcs)
         if a.pm_counter_addr:
             result["pm_counter_samples"] = ctr
         log_end = os.path.getsize(log)
         result["idle_png"] = screenshot(mon, os.path.join(a.out, "idle.png"))
+        if not enough_samples(result["pc_samples"], a.measure) or (
+                a.pm_counter_addr and not enough_samples(sum(ctr.values()), a.measure)):
+            raise InfraTimeout("monitor starved in the window: %d PC / %d counter samples of %d attempts" % (
+                result["pc_samples"], sum(ctr.values()), tries))
+        if not (result["boot_png"] and result["idle_png"]):
+            raise InfraTimeout("screendump did not complete (boot.png %s, idle.png %s)" % (
+                bool(result["boot_png"]), bool(result["idle_png"])))
         if a.display_off_s > 0:
             # Display off and idle: Canon's PowerMgr may enter selfRefresh (all clocks off, DryOS
             # timers stopped) once the image engine clock is off and nothing restamped it for ~1 s.
             # Then the same key wakes the camera; the screen must change (GUI alive after the sleep).
+            # The segment is timed from the display really turning off (its log line), not from the key.
             seg = {"key": a.display_key, "seconds": a.display_off_s}
             seg_log0 = os.path.getsize(log)
-            seg["t0"] = round(time.monotonic() - t0, 2)
+            idle_hash = frame_hash(result["idle_png"])
             monitor_cmd(mon, "sendkey " + a.display_key)
-            dpcs, dctr = sample(mon, time.monotonic() + a.display_off_s, a.pm_counter_addr)
+            if a.debugmsg_addr and a.display_off_marker:
+                ack = wait_log(log, [a.display_off_marker], seg_log0, a.step_timeout, q)
+                seg["display_off_ack_s"] = None if ack is None else round(ack, 2)
+            seg["t0"] = round(time.monotonic() - t0, 2)
+            dpcs, dctr, dtries = sample(mon, time.monotonic() + a.display_off_s, a.pm_counter_addr)
             seg["t1"] = round(time.monotonic() - t0, 2)
             seg_log1 = os.path.getsize(log)
             seg["top_pcs"] = top(dpcs, 5)
+            seg["pc_samples"] = sum(dpcs.values())
             seg["pm_counter_samples"] = dctr
+            if not enough_samples(seg["pc_samples"], a.display_off_s) or (
+                    a.pm_counter_addr and not enough_samples(sum(dctr.values()), a.display_off_s)):
+                raise InfraTimeout("monitor starved with the display off: %d PC / %d counter samples of %d" % (
+                    seg["pc_samples"], sum(dctr.values()), dtries))
             seg["dark_png"] = screenshot(mon, os.path.join(a.out, "display_off.png"))
+            if not seg["dark_png"]:
+                raise InfraTimeout("screendump did not complete (display_off.png)")
+            if seg["dark_png"] and frame_hash(seg["dark_png"]) == idle_hash:
+                print("note: screen unchanged after the display-off key", file=sys.stderr)
             monitor_cmd(mon, "sendkey " + a.display_key)
-            time.sleep(4)
-            seg["woken_png"] = screenshot(mon, os.path.join(a.out, "woken.png"))
+            # At least 4 s as before, then until the screen changes (a slow host redraws late).
+            seg["woken_png"] = wait_screen(mon, os.path.join(a.out, "woken.png"), frame_hash(seg["dark_png"]),
+                                           4, a.step_timeout, q)
+            if not seg["woken_png"]:
+                raise InfraTimeout("screendump did not complete (woken.png)")
             seg_log2 = os.path.getsize(log)
             seg["log"] = [seg_log0, seg_log1, seg_log2]
             result["display_off"] = seg
@@ -294,10 +472,15 @@ def main():
             # The menu is a consumer of lens info outside LiveView: Canon's counter changes counted
             # while it is open show whether ML still refreshes it (docs/analysis/powersave-hold.md).
             menu_start = os.path.getsize(log)
+            before = frame_hash(result.get("display_off", {}).get("woken_png") or result["idle_png"])
+            tm = time.monotonic()
             monitor_cmd(mon, "sendkey delete")
-            time.sleep(max(3, a.menu_s))
+            result["menu_png"] = wait_screen(mon, os.path.join(a.out, "menu.png"), before,
+                                             max(3, a.menu_s), a.step_timeout, q)
             menu_end = os.path.getsize(log)
-            result["menu_png"] = screenshot(mon, os.path.join(a.out, "menu.png"))
+            result["menu_s"] = round(time.monotonic() - tm, 2)
+            if not result["menu_png"]:
+                raise InfraTimeout("screendump did not complete (menu.png)")
             # Close it again: ML's idle state must come back with no hold left (checked below).
             # On a fresh card the ML menu opens on its beta warning, which the first MENU only dismisses.
             # --config-check: then SET selects the first entry of the tab ML opens on (Help: its help
@@ -306,18 +489,26 @@ def main():
             # by run_cam.sh, fio holds by compare.py). Otherwise MENU twice: the second closes the menu
             # (or, without the warning, opens Canon's menu, which ML does not hold). Trash would reopen it.
             keys = ["m", "spc", "m", "m"] if a.config_check else ["m", "m"]
+            keys_log = os.path.getsize(log)
             for k in keys:
                 monitor_cmd(mon, "sendkey " + k)
                 time.sleep(2)
                 if k == "spc":
                     result["menu_set_png"] = screenshot(mon, os.path.join(a.out, "menu_set.png"))
             time.sleep(3)
+            if a.config_check and a.debugmsg_addr:
+                # The config save is a card write: wait (bounded) for its FIO hold to be released.
+                w = wait_log(log, [r"\[PS\] release fio"], keys_log, a.step_timeout, q)
+                result["config_save_wait_s"] = None if w is None else round(w, 2)
             result["menu_closed_png"] = screenshot(mon, os.path.join(a.out, "menu_closed.png"))
         if q.poll() is not None:
             raise RuntimeError("QEMU died during the run, code %s (see qemu.log)" % q.returncode)
         t_quit = time.monotonic() - t0
         monitor_cmd(mon, "quit")
         q.wait(timeout=30)
+    except InfraTimeout as e:
+        result["infra_error"] = str(e)
+        print("INFRASTRUCTURE TIMEOUT: %s" % e, file=sys.stderr)
     except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
         # Keep going: the log and whatever the plugin wrote are the evidence of what went wrong.
         result["error"] = str(e)
@@ -342,7 +533,8 @@ def main():
                 intervals.append(rec)
     result["wakeups_total"] = summary
     # The measurement window only (the summary runs until quit, i.e. also covers what follows the window)
-    win_stats = plugin_window(intervals, a.warmup * 1000, (a.warmup + a.measure) * 1000) if summary else None
+    win_stats = plugin_window(intervals, win0 * 1000, (win0 + a.measure) * 1000) if summary else None
+    result["window_plugin_s"] = win_stats["seconds"] if win_stats else None
     result["wakeups"] = dict(summary, **win_stats) if win_stats else summary
     # The plugin times its window from its own load (CLOCK_MONOTONIC, like this script). If the two
     # clocks disagree by more than QEMU's start-up, the window was not where we meant it.
@@ -381,7 +573,6 @@ def main():
             f.seek(menu_start)
             menu = re.sub(r"\x1b\[[0-9;]*m", "", f.read(menu_end - menu_start).decode(errors="replace"))
         result["pm_calls_menu"] = len(re.findall(pm_re, menu))
-        result["menu_s"] = max(3, a.menu_s)
     result["ml_holds_window_end"] = int(ps[-1]) if ps else None
     clean = re.sub(r"\x1b\[[0-9;]*m", "", text)
     ps_all = re.findall(r"\[PS\] (?:hold|release) .*? -> (\d+)", clean)
@@ -438,18 +629,22 @@ def main():
     #  - with --config-check, the config save after the deep sleep is checked by compare.py
     #    (file on the card) and its fio holds by the display-off segment above.
     failed = []
-    if a.boot and a.debugmsg_addr and not result.get("error"):
-        if a.active_hold:
+    infra = result.get("infra_error")
+    if a.debugmsg_addr and not infra and not result.get("error") and result["pm_counter_window_end"] is None:
+        failed.append("no Canon [PM] counter message in the log by the window end")
+    if a.boot and a.debugmsg_addr and not infra and not result.get("error"):
+        if result["ml_holds_window_end"] is None:
+            failed.append("no ML [PS] message in the log by the window end (ML not started?)")
+        elif a.active_hold:
             if not (result["ml_holds_window_end"] or 0) >= 1:
                 failed.append("ML holds at window end = %s, expected >= 1 (%s)" % (
                     result["ml_holds_window_end"], a.active_hold))
             if not any("hold %s " % a.active_hold in l for l in result["ps_log"]):
                 failed.append("no [PS] hold %s in the log" % a.active_hold)
-        else:
-            if result["ml_holds_window_end"] != 0:
-                failed.append("ML holds at window end = %s, expected 0" % result["ml_holds_window_end"])
-            if result["ml_holds_end"] != 0:
-                failed.append("ML holds after the menu closed = %s, expected 0" % result["ml_holds_end"])
+        elif result["ml_holds_window_end"] != 0:
+            failed.append("ML holds at window end = %s, expected 0" % result["ml_holds_window_end"])
+        if not a.active_hold and result["ml_holds_end"] != 0:
+            failed.append("ML holds after the menu closed = %s, expected 0" % result["ml_holds_end"])
         if result["fio_holds"] == 0:
             failed.append("no [PS] hold fio in the log")
         if result["fio_holds"] != result["fio_releases"]:
@@ -458,11 +653,20 @@ def main():
     with open(os.path.join(a.out, "result.json"), "w") as f:
         json.dump(result, f, indent=1)
     print(json.dumps(result))
+    if infra:
+        # Not a functional verdict either way: the emulator never got where the timeline needed it.
+        print("INFRASTRUCTURE TIMEOUT (emulator too slow or unresponsive, no functional result): %s" % infra,
+              file=sys.stderr)
+        sys.exit(EXIT_INFRA)
     if failed:
         print("power-save checks FAILED: %s" % "; ".join(failed), file=sys.stderr)
         sys.exit(1)
     if result.get("error") or not summary or not summary.get("seconds"):
         print("no plugin summary for the measurement window", file=sys.stderr)
+        sys.exit(1)
+    if not win_stats or win_stats["seconds"] < 0.9 * a.measure:
+        print("plugin interval records cover %s s of the %.0f s window" % (
+            win_stats and win_stats["seconds"], a.measure), file=sys.stderr)
         sys.exit(1)
 
 
