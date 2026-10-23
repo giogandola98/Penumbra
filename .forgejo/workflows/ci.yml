@@ -1,0 +1,10 @@
+name: probe
+on: [push]
+jobs:
+  probe:
+    runs-on: linux-podman
+    steps:
+      - run: |
+          id; cat /etc/os-release | head -2; which podman docker git node curl gcc make || true
+          echo "--- env"; env | grep -iE '^(GITHUB|FORGEJO|RUNNER|ACT)' | grep -viE 'token|secret' | head -30
+          df -h / | tail -1; nproc; free -m | head -2
