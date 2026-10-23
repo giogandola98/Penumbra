@@ -1,0 +1,6 @@
+autoexec_bytes=454944
+text=394784
+data=56501
+bss=85760
+modules=19
+task_create_sites=91

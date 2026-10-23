@@ -1,0 +1,34 @@
+# Pinned build environment for ML-Optimized (Canon EOS M, platform/EOSM.202).
+# Build:  podman build -t ml-ci -f ci/Containerfile ci/
+# Run:    podman run --rm -v "$PWD":/work -w /work ml-ci ci/build.sh
+#
+# Base is pinned by digest (debian:bookworm-slim) so rebuilds are reproducible.
+FROM docker.io/library/debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+
+ARG ARM_TOOLCHAIN_URL=https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-arm-none-eabi.tar.xz
+ARG ARM_TOOLCHAIN_SHA256=84be93d0f9e96a15addd490b6e237f588c641c8afdf90e7610a628007fc96867
+
+# gcc/libc6-dev: host unit tests. git: version string in the ML build.
+# xz-utils/curl are only needed to unpack the toolchain but are cheap and handy in CI scripts.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      make python3 python3-docutils python3-pycparser zip unzip xz-utils \
+      curl ca-certificates gcc libc6-dev cppcheck git \
+ && rm -rf /var/lib/apt/lists/*
+
+# Same Arm GNU toolchain release as the local dev host; checksum-verified.
+# Docs, gdb and the (unused) bare-metal host-tools are dropped to keep the image small.
+RUN curl -fsSL "$ARM_TOOLCHAIN_URL" -o /tmp/arm.tar.xz \
+ && echo "$ARM_TOOLCHAIN_SHA256  /tmp/arm.tar.xz" | sha256sum -c - \
+ && mkdir -p /opt/arm \
+ && tar -xJf /tmp/arm.tar.xz -C /opt/arm --strip-components=1 \
+ && rm -f /tmp/arm.tar.xz \
+ && rm -rf /opt/arm/share/doc /opt/arm/share/gcc-arm-none-eabi/samples /opt/arm/bin/arm-none-eabi-gdb* /opt/arm/share/gdb
+
+ENV ARM_BINPATH=/opt/arm/bin
+ENV PATH=/opt/arm/bin:$PATH
+
+# CI mounts the checkout owned by another uid; let git (version string) still work.
+RUN git config --system --add safe.directory '*'
+
+WORKDIR /work
