@@ -1143,11 +1143,15 @@ static void lv_img_init()
 
 }
 
+/* Without the (movie-only) vignetting menu the correction can never be enabled,
+ * so the photo profile skips this boot task and its 8 KB stack. */
+#ifdef FEATURE_VIGNETTING_CORRECTION
 static void vignetting_init (void * parm)
 {
     vignetting_correction_set_coeffs(vignetting_correction_a, vignetting_correction_b, vignetting_correction_c);
     vignetting_correction_initialized = 1;
 }
+TASK_CREATE( "vignetting_init", vignetting_init, 0, 0x1e, 0x2000 );
+#endif
 
 INIT_FUNC("lv_img", lv_img_init);
-TASK_CREATE( "vignetting_init", vignetting_init, 0, 0x1e, 0x2000 );
