@@ -157,6 +157,26 @@ Done:
 
 About 1.9 KB of it is `powersave.o` (bookkeeping, semaphore wrapper, Debug-menu entry, log strings).
 
+### First QEMU results (Forgejo CI runs 27-32, 1100D.105, no PM model yet)
+
+| scenario | WFI/s | IRQ/s | task sw/s | busy | hottest PC | Canon counter at window end | ML holds | [PM] calls in window |
+|---|---:|---:|---:|---:|---|---:|---:|---:|
+| canon | 0 | 105 | 69 | 1.00 | 0xFF1EA818 | 0 | – | 0 |
+| ml-full | 108 | 112 | 341 | 0.02 | 0xFF1EA9B4 (after WFI) | 1 | 0 | 116 |
+| ml-hold | 10 | 109 | 329 | 0.91 | 0xFF1EA818 | **0** | **0** | 116 |
+
+- The hold build ends boot with `[PS] release boot -> 0` and Canon's counter at 0; the PowerMgr task then sits in
+  the mode-2 loop (0xFF1EA818) exactly like Canon alone, while `ml-full` stays at Counter = 1 and plain WFI. ML's
+  tasks keep their rates (task switches/s within 4 % of `ml-full`), so nothing stalls; the busy ratio rises only
+  because qemu-eos does not model the PM registers and the mode-2 loop spins (same as `canon`).
+- The ML menu opened after the window takes `[PS] hold menu -> 1` as expected.
+- **Finding:** with ML loaded (both builds) Canon's `PropMgr` toggles Disable/Enable about twice a second at idle
+  (Canon alone: never). The task switch preceding each is `clock_task`, whose `do_this_every_second()` calls
+  `_prop_lv_lens_request_update()` once a second outside LiveView (`src/shoot.c:390`). Every `EnablePowerSave`
+  restamps PowerMgr's "last" time and the deep sleep needs ≥ 1000 ticks without one, so this 1 Hz lens-info request
+  probably keeps the camera out of self-refresh even with ML's holds at 0. Follow-up (not in this change): skip the
+  request while the display is off / no ML consumer needs `lens_info` outside LV, then re-check with the PM model.
+
 ### QEMU recipe (1100D.105)
 
 The QEMU side (PM register model) is being done separately in the QEMU-EOS-Optimized repo; steps 3–5 need it.
