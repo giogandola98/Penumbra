@@ -141,7 +141,20 @@ def main():
         time.sleep(max(0, a.warmup - (time.time() - t0)))
         log_start = os.path.getsize(log)
         result["boot_png"] = screenshot(mon, os.path.join(a.out, "boot.png"))
-        time.sleep(max(0, a.warmup + a.measure - (time.time() - t0)))
+        # Sample the guest PC through the monitor during the window: a ROM-independent profile that
+        # shows where the CPU spends its time (e.g. an idle loop that spins instead of sleeping).
+        pcs = {}
+        end = t0 + a.warmup + a.measure
+        while time.time() < end - 0.5:
+            m = re.search(r"R15=([0-9a-f]{8})", monitor_cmd(mon, "info registers", timeout=2))
+            if m:
+                pcs[m.group(1)] = pcs.get(m.group(1), 0) + 1
+            time.sleep(min(0.5, max(0, end - time.time())))
+        time.sleep(max(0, end - time.time()))
+        n = sum(pcs.values())
+        result["pc_samples"] = n
+        result["top_pcs"] = [("0x" + pc, round(c / n, 3)) for pc, c in
+                             sorted(pcs.items(), key=lambda kv: -kv[1])[:10]] if n else []
         log_end = os.path.getsize(log)
         result["idle_png"] = screenshot(mon, os.path.join(a.out, "idle.png"))
         if a.boot:

@@ -46,6 +46,10 @@ def main():
         if r and r.get("top_tasks"):
             print("%s top tasks (switches in window): %s" % (
                 sc, ", ".join("%s=%d" % (n, c) for n, c in r["top_tasks"])))
+    for sc, r in rows:
+        if r and r.get("top_pcs"):
+            print("%s PC profile (%d monitor samples): %s" % (
+                sc, r["pc_samples"], ", ".join("%s=%.0f%%" % (pc, f * 100) for pc, f in r["top_pcs"][:5])))
     print("\nwakeups/s = WFI (idle entries) per second; busy ratio = 1 - halted/elapsed host time "
           "(TCG over-estimates it). See docs/EMULATION.md.")
 
