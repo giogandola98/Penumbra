@@ -153,8 +153,11 @@ samples, ML holds `None`, deep-sleep checks failed on `ml-hold`):
   `INFRASTRUCTURE TIMEOUT` (exit 3, distinct from a functional failure). `run_cam.sh` reruns such a scenario
   once, alone; a second timeout fails the job as infrastructure. A missing `[PM]`/`[PS]` value at the window
   end, an empty counter sample set or a scenario without window rates is a failure (`compare.py` exit 1).
-Results are uploaded as artifact `ml-optimized-emulation` (tables, JSON, logs, screenshots; never ROMs,
-disk images or binaries).
+Results are uploaded as artifact `ml-optimized-emulation-<run number>` (tables, JSON, logs, screenshots; never
+ROMs, disk images or binaries). Download it with the link the upload step prints (`download: ...`): Forgejo's
+artifact download route `/actions/runs/<N>/artifacts/<name>` takes the run *id*, not the run number shown in the
+run's URL. Before the names carried the run number, the run number in that route fetched another run's artifact
+of the same name (older, without the 4000D results); now it is a 404.
 
 ### Locally
 

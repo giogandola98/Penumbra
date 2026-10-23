@@ -60,7 +60,7 @@ jobs:
         if: always()
         run: |
           # The host executor has no node, so JS actions (upload-artifact) cannot run; speak the v3 protocol directly.
-          src-checkout/ci/upload-artifact.sh ml-optimized-eosm202 artifacts
+          src-checkout/ci/upload-artifact.sh "ml-optimized-eosm202-${{ github.run_number }}" artifacts
 
   emulation:
     # Separate job so emulation never delays the firmware build. QEMU itself (qemu-eos + wakeups plugin)
@@ -118,4 +118,4 @@ jobs:
           find emu-artifacts -type f \( -iname '*.bin' -o -iname '*.img' -o -iname '*.o' -o -iname '*.elf' -o -iname '*.so' \) -delete
           find emu-artifacts -type f | sort
           cat emu-artifacts/*/comparison.md 2>/dev/null || true
-          src-checkout/ci/upload-artifact.sh ml-optimized-emulation emu-artifacts
+          src-checkout/ci/upload-artifact.sh "ml-optimized-emulation-${{ github.run_number }}" emu-artifacts

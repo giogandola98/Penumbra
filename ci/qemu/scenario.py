@@ -492,9 +492,12 @@ def main():
             # (or, without the warning, opens Canon's menu, which ML does not hold). Trash would reopen it.
             keys = ["m", "spc", "m", "m"] if a.config_check else ["m", "m"]
             keys_log = os.path.getsize(log)
-            for k in keys:
+            for i, k in enumerate(keys):
                 monitor_cmd(mon, "sendkey " + k)
                 time.sleep(2)
+                if i == 0:
+                    # The menu itself (first tab), after the beta warning (if any) was dismissed.
+                    result["menu_main_png"] = screenshot(mon, os.path.join(a.out, "menu_main.png"))
                 if k == "spc":
                     result["menu_set_png"] = screenshot(mon, os.path.join(a.out, "menu_set.png"))
             time.sleep(3)

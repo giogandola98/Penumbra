@@ -2,6 +2,11 @@
 # Upload a directory as one Forgejo Actions artifact (v4 protocol), without node.
 # Why: the linux-podman runner uses the host executor and has no node, so actions/upload-artifact cannot run.
 # Usage (inside a workflow step): ci/upload-artifact.sh NAME DIR
+# NAME should be unique per run (the workflow appends the run number): Forgejo's web download route
+# /<owner>/<repo>/actions/runs/<N>/artifacts/<name> resolves <N> as the run *id* (database id), while the
+# run page and the artifact list use the run *index* (the number in the run's URL). With one artifact name
+# for every run, opening the download link with the index silently returned another, older run's artifact
+# of the same name. A unique name makes that mistake a 404 instead, and the script prints the right link.
 set -euo pipefail
 exec python3 -I - "$@" <<'PY'
 import base64, hashlib, io, json, os, sys, urllib.parse, urllib.request, zipfile
@@ -51,4 +56,8 @@ res = call("POST", "FinalizeArtifact", dict(ids, size=str(len(blob)), hash="sha2
 if not res.get("ok"):
     sys.exit("FinalizeArtifact failed: %r" % res)
 print("uploaded artifact %s (%d bytes)" % (name, len(blob)))
+server, repo = os.environ.get("GITHUB_SERVER_URL", ""), os.environ.get("GITHUB_REPOSITORY", "")
+if server and repo:
+    # Download link: the run id from the runtime token, not the run index shown in the run's URL.
+    print("download: %s/%s/actions/runs/%s/artifacts/%s" % (server.rstrip("/"), repo, run_id, urllib.parse.quote(name)))
 PY

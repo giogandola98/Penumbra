@@ -14,7 +14,7 @@ podman. So the job:
    Containerfile, so it is rebuilt only when that file changes (first run ~6 min, later runs ~1.5 min);
 3. runs inside the image: `ci/build.sh` (EOSM.202, `FATAL_WARNINGS=y`), `ci/host-tests.sh`
    (`make -C tests/host`, or "no host tests yet"), `ci/cppcheck.sh` (report only, never fails);
-4. uploads `magiclantern.zip`, `build-report.txt`, `cppcheck-report.txt` as artifact `ml-optimized-eosm202` (artifact names keep the repository's old name for now)
+4. uploads `magiclantern.zip`, `build-report.txt`, `cppcheck-report.txt` as artifact `ml-optimized-eosm202-<run number>` (artifact names keep the repository's old name for now; download link: see `docs/EMULATION.md`)
    with `ci/upload-artifact.sh` (v4 protocol over curl/python, because JS actions cannot run without node).
 
 ## Run locally
@@ -43,5 +43,5 @@ After an intentional size change is reviewed and merged, regenerate it from a CI
 
 The `emulation` job (same workflow) builds the qemu-eos image `ci/qemu/Containerfile` (content-addressed tag,
 rebuilt only when that file changes), runs the wakeup-plugin self-test, and runs the camera scenarios when the
-ROM package is available (otherwise `SKIPPED`). Results: artifact `ml-optimized-emulation`.
+ROM package is available (otherwise `SKIPPED`). Results: artifact `ml-optimized-emulation-<run number>`.
 Details, metrics and ROM policy: `docs/EMULATION.md`.
