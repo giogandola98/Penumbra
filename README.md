@@ -32,16 +32,16 @@ redrawn when nothing has changed, and a permanent block on Canon's low-power idl
 |---|---|
 | Photo build profile (EOS M) | Done, on `main` |
 | Faster overlay pixel kernels (zebras, peaking, histogram) | Done, on `main`, bit-exact against the original code in host tests |
-| Low-risk wakeup reductions | Done on a branch (`power/low-risk`), not merged |
-| Counted power-save holds (stop blocking Canon's low-power idle) | Done on a branch (`power/powersave-hold`), not merged |
-| Lens-info poll fix (stops 3-4 Canon power-save toggles/s at idle) | Done on a branch (`power/lens-poll`), not merged |
-| Card I/O safe across deep sleep | In progress (`power/sd-safe`) |
-| Deep-sleep modelling in the emulator | In progress |
+| Low-risk wakeup reductions | Done, on `main` |
+| Counted power-save holds (stop blocking Canon's low-power idle) | Done, on `main` |
+| Lens-info poll fix (stops 3-4 Canon power-save toggles/s at idle) | Done, on `main` |
+| Card I/O safe across deep sleep (each file call holds power save) | Done, on `main` |
+| Deep sleep in the emulator (1100D) | Done: Canon alone and Penumbra enter Canon's deep sleep with the display off; Magic Lantern never does |
 | Event-driven core | Designed, not started |
 | Canon 1100D | Used as the emulation test body: the whole chain runs there first |
 | Canon EOS M emulation | Waiting for a ROM dump. CI skips EOS M scenarios until one is available |
 | Real hardware | **Not tested** |
-| Canon 4000D port | Planned ([docs/PORT-4000D.md](docs/PORT-4000D.md)) |
+| Canon 4000D port | In progress: 161 of 167 Canon stubs found and checked against the ROM; Magic Lantern boots and its menu opens in emulation ([docs/PORT-4000D.md](docs/PORT-4000D.md)) |
 
 Measured and estimated numbers so far are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#4-where-we-are).
 Penumbra makes no claims about battery life (percentages, shots per charge) until it has been measured on a
