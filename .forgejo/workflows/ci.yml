@@ -5,12 +5,9 @@ jobs:
     runs-on: linux-podman
     steps:
       - run: |
-          for t in podman docker git node curl gcc make python3 pip3 zip unzip xz tar cppcheck dnf sudo; do printf '%s: ' $t; command -v $t || echo MISSING; done
-          python3 --version; gcc --version | head -1; git --version
-          echo HOME=$HOME PWD=$PWD; whoami
+          podman --version; podman info 2>&1 | grep -E 'rootless|graphRoot|cgroupVersion|storage' | head
+          podman images 2>&1 | head
           curl -sI -m 20 https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-arm-none-eabi.tar.xz | head -3
-          curl -sI -m 10 https://pypi.org/simple/ | head -1
-          python3 -c "import docutils, pycparser" 2>&1 | tail -1
-          ls /var/lib/forgejo-runner/ 2>&1; ls -d /opt/* 2>&1 | head
-          dnf list --available cppcheck 2>&1 | tail -3
-          env | grep -E '^(GITHUB_SERVER_URL|FORGEJO_SERVER_URL|GITHUB_REPOSITORY)='
+          timeout 120 podman run --rm docker.io/library/debian:bookworm-slim sh -c 'echo inside; id; getent hosts deb.debian.org' 2>&1 | tail -5
+          env | grep -E '^(GITHUB_SERVER_URL|GITHUB_REPOSITORY)='
+          ls -ld $PWD; ls $PWD | head -3
