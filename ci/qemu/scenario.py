@@ -322,6 +322,8 @@ def main():
                     help="display off / wake / menu: how long to wait for the guest to react to a key")
     ap.add_argument("--display-off-marker", default="TurnOffDisplay",
                     help="log regex showing the display-off key took effect (the idle segment is timed from it)")
+    ap.add_argument("--probe-keys", default="",
+                    help="comma-separated qemu-eos keys sent at the end; logs the GUI events each one causes")
     ap.add_argument("--warmup", type=float, default=40)
     ap.add_argument("--measure", type=float, default=30)
     ap.add_argument("--out", required=True)
@@ -501,6 +503,21 @@ def main():
                 w = wait_log(log, [r"\[PS\] release fio"], keys_log, a.step_timeout, q)
                 result["config_save_wait_s"] = None if w is None else round(w, 2)
             result["menu_closed_png"] = screenshot(mon, os.path.join(a.out, "menu_closed.png"))
+        if a.probe_keys:
+            # Key probe (port bring-up): which GUI events Canon's firmware derives from each emulated
+            # key. GUI_Control / GUI_OTHEREVENT debug messages name the event code ML's gui.h uses.
+            probe = []
+            for i, k in enumerate(a.probe_keys.split(",")):
+                p0 = os.path.getsize(log)
+                monitor_cmd(mon, "sendkey " + k)
+                time.sleep(1.5)
+                txt = read_log(log, p0, os.path.getsize(log))
+                ev = [l.strip()[-80:] for l in txt.splitlines() if re.search(r"GUI_(Control|CONTROL|OTHEREVENT|ChangeMode)", l)]
+                png = screenshot(mon, os.path.join(a.out, "key%02d_%s.png" % (i, k)))
+                probe.append({"key": k, "events": ev[:8], "png": png})
+            with open(os.path.join(a.out, "keys.json"), "w") as f:
+                json.dump(probe, f, indent=1)
+            result["key_probe"] = [(p["key"], p["events"][:2]) for p in probe]
         if q.poll() is not None:
             raise RuntimeError("QEMU died during the run, code %s (see qemu.log)" % q.returncode)
         t_quit = time.monotonic() - t0

@@ -33,6 +33,13 @@ jobs:
         run: |
           podman run $SANDBOX -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/build.sh
 
+      - name: Build 1100D.105 and 4000D.110 (FATAL_WARNINGS=y)
+        run: |
+          # Stub/ROM evidence is checked in the emulation job, where the ROMs are available.
+          podman run $SANDBOX -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" bash -c \
+              'for p in 1100D.105 4000D.110; do make -C platform/$p -j"$(nproc)" FATAL_WARNINGS=y >/dev/null || { echo "build $p FAILED"; exit 1; }; ls -l platform/$p/build/autoexec.bin; done
+               python3 -I tools/check_stubs.py platform/4000D.110'
+
       - name: Host tests
         run: |
           podman run $SANDBOX -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/host-tests.sh
@@ -58,7 +65,7 @@ jobs:
   emulation:
     # Separate job so emulation never delays the firmware build. QEMU itself (qemu-eos + wakeups plugin)
     # is built, self-tested and published by the QEMU-EOS-Optimized repo; this job pulls the image pinned
-    # in ci/qemu-image.txt. Camera scenarios (1100D, EOSM) run only when ROMs are provisioned (docs/EMULATION.md).
+    # in ci/qemu-image.txt. Camera scenarios (1100D, EOSM, 4000D) run only when ROMs are provisioned (docs/EMULATION.md).
     runs-on: linux-podman
     env:
       SANDBOX: --rm --network=none --security-opt label=disable --cap-drop=all --security-opt no-new-privileges --pids-limit=512

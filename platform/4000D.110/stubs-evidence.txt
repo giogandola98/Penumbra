@@ -1,0 +1,213 @@
+# Evidence for platform/4000D.110/stubs.S, checked against ROM1 by tools/check_stubs.py.
+# How each stub was found, with confidence: docs/firmware/4000D-stubs.md
+rom  FE000000 1000000                # 16 MiB flash; ROM1.BIN holds it twice
+copy FE9A15FC 1900 4D0AC              # cstart copy loop (literals at 0xFE0C00DC..E4)
+
+# Startup
+cstart              blat@0xFE0C0638 call=bzero32 call=create_init_task
+bzero32             callers=2000
+create_init_task    fn calledby=cstart
+init_task           fn word@0xFE0C3A9C
+additional_version  litin=0xFE2B64DC
+
+# File I/O
+_FIO_OpenFile        fn callers=80 calledby=0xFE0EFD74
+_FIO_CreateFile      fn callers=50 calledby=0xFE2345A0
+_FIO_RemoveFile      fn callers=30 calledby=0xFE242FEC
+_FIO_ReadFile        fn callers=60 calledby=0xFE233660
+_FIO_SeekSkipFile     fn callers=40 calledby=0xFE21CAAC
+_FIO_WriteFile       fn callers=100 calledby=0xFE2345A0
+_FIO_CloseFile        fn callers=150 calledby=0xFE0EFD74
+_FIO_GetFileSize     fn callers=50 calledby=0xFE0F0888
+_FIO_RenameFile      fn callers=10
+_FIO_CreateDirectory fn callers=5 calledby=0xFE46CC40
+_FIO_FindFirstEx     fn callers=30 calledby=0xFE0EF88C
+_FIO_FindNextEx       fn callers=30 calledby=0xFE0EF88C
+_FIO_FindClose        fn callers=50 calledby=0xFE0EF88C
+
+# GUI
+gui_main_struct      litin=gui_main_task
+gui_task_list        litin=dialog_redraw+0x1C
+GUI_ChangeMode       fn str=GUI_ChangeMode:%d
+GUI_Control          fn str="GUI_Control:%d 0x%x"
+SetGUIRequestMode    fn str="SetGUIRequestMode(%d)" callers=100
+gui_init_end         fn strin="ERR EndGuiInit" call=take_semaphore
+gui_main_task        fn call=gui_init_end call=msg_queue_receive
+gui_massive_event_loop fn str=GUICMD_UNPRESS_SET call=CancelTimer
+GUI_SetLvMode        fn str="GUI_SetLvMode (%d)" call=_prop_request_change
+Gui_SetSoundRecord   fn str="GUI_SetSoundRec (%d)" call=_prop_request_change
+
+# ASIF / audio
+SetAudioVolumeOut    fn str=./Audio/AudioIC.c str="Keep Volume (%d->%d)"
+SetSamplingRate      fn str=./Audio/AudioIC.c strin="SamplingRate Change"
+PowerMicAmp          fn str="PowerControlMicAmp(%d,%d)"
+SetNextASIFADCBuffer fn str=SetNextINT16ASIFADCBuffer call=TryPostEvent
+SetNextASIFDACBuffer fn str=SetNextINT16ASIFDACBuffer call=TryPostEvent
+StartASIFDMAADC      fn str=StartASIFDMAADC
+StopASIFDMAADC       fn str=StopASIFDMAADC call=TryPostEvent
+StartASIFDMADAC      fn str=StartASIFDMADAC
+StopASIFDMADAC       fn str=StopASIFDMADAC call=TryPostEvent
+SoundDevActiveIn     fn str=SoundDevActiveIn
+sounddev_active_in   fn str=SoundDevActiveIn
+sounddev_task        fn str="[SND] _SoundDeviceTask:%1X"
+sounddev             litin=sounddev_task
+audio_thresholds     litin=0xFE25E3C4-0x18
+
+# Bitmap
+LCD_Palette          litin=0xFE10FEA0
+bmp_vram_info        litin=0xFE10F21C
+
+# CFN
+GetCFnData           fn str="Illegal Data GetCFnData (%d)"
+SetCFnData           str="Illegal Data SetCFnData (%d)"
+
+# Camera interface, MPU, DMA
+camera_engine        manual
+_mpu_send            fn str="dwSize < TXBD_DATA_SIZE"
+_mpu_recv            fn litin=0xFE1085E4
+dma_memcpy           fn strin="HPCopy : TimeOut"
+
+# Debug messages
+DryosDebugMsg        callers=20000 call=vsnprintf
+dm_names             litin=0xFE117178
+dm_set_store_level   fn str=./DbgMgr/DbgMgr.c callers=10
+dm_set_print_level   fn str=./DbgMgr/DbgMgr.c callers=5
+
+# Dialogs
+dialog_redraw        fn assert=Dialog.c:728 callers=300
+dialog_set_property_str fn callers=300
+ErrCardForLVApp_handler fn strin="DlgLiveViewError.c TERMINATE_WINSYS"
+ErrForCamera_handler fn strin="DlgErrForCamera.c LOCAL_CLOSE_DIALOG" call=SetGUIRequestMode
+HideUnaviFeedBack_maybe lit=0x3F550 call=0xFE0CBE18
+LiveViewApp_handler  fn strin="DlgLiveView.c PRESS_ERASE_BUTTON"
+LiveViewApp_handler_BL_JudgeBottomInfoDispTimerState bl=0xFE423970
+LiveViewApp_handler_end fn str="StartLiveViewApp(%#x)"
+PlayMain_handler     fn str="DlgPlayMain.c TERMINATE_WINSYS"
+PlayMovieGuideApp_handler fn strin="DlgPlayMovieGuide.c PRESS_SET_BUTTON"
+ShootOlcApp_handler  fn strin="DlgShootOlc.c GuiMode" call=SetGUIRequestMode
+
+# Display
+MirrorDisplay        fn str="-->Mirror start" call=0xFE110F1C
+ReverseDisplay       fn str="-->Reverse start" call=0xFE110EF4
+NormalDisplay        fn str="-->Normal start" call=0xFE110F44
+
+# EDMAC
+SetEDmac             fn strin="SetEDmac(~~)"
+ConnectWriteEDmac    fn strin="ConnectWriteEDmac(~~)"
+ConnectReadEDmac     fn strin="ConnectReadEDmac(~~)"
+StartEDmac           fn strin="StartEDmac(~~)"
+AbortEDmac           fn call=_EngDrvOut callers=150
+RegisterEDmacCompleteCBR callers=250
+UnregisterEDmacCompleteCBR callers=200
+RegisterEDmacAbortCBR fn str="RegisterEDmacAbortCBR(%d)"
+UnregisterEDmacAbortCBR fn str="UnregisterEDmacAbortCBR(%d)"
+RegisterEDmacPopCBR  callers=40
+UnregisterEDmacPopCBR callers=30
+
+# Electronic level, engio, eventprocs
+GUI_SetRollingPitchingLevelStatus str="GUI_SetRollingPitchingLevelStatus Status(%d)" callers=5
+_EngDrvOut           fn strin="EngDrvOut LCLK Disable"
+_engio_write         fn strin="[ENGIO](Addr:%#8lx, Data:%#8lx)[%d]"
+shamem_read          callers=5
+call                 callers=200
+
+# Events (state objects)
+TryPostEvent         fn call=_AllocateMemory call=msg_queue_post callers=400
+TryPostEvent_end     fn
+TryPostStageEvent    fn call=_AllocateMemory call=msg_queue_post callers=100
+TryPostStageEvent_end callers=10
+
+# ExMem
+CreateMemoryChunk    fn str=pChunk call=_malloc
+GetMemoryAddressOfMemoryChunk fn str="IsChunkSignature( hChunk )" callers=100
+DeleteMemorySuite    fn str="IsSuiteSignature( hSuite )" call=_free
+CreateMemorySuite    fn str=pSuite call=CreateMemoryChunk
+AddMemoryChunk       fn str="IsSuiteSignature( hSuite )" callers=20
+GetFirstChunkFromSuite fn str="IsSuiteSignature( hSuite )" callers=100
+GetNextMemoryChunk   fn str="IsChunkSignature( hPos )"
+AllocateMemoryResource fn str=m_pfAllocMemoryCBR
+AllocateContinuousMemoryResource fn str=m_pfContAllocMemoryCBR
+FreeMemoryResource   fn str=m_pfFreeMemoryCBR
+SRM_AllocateMemoryResourceFor1stJob fn str=RscMgr.c callers=4
+SRM_FreeMemoryResourceFor1stJob fn str=RscMgr.c callers=2
+
+# GUI posts / timers
+gui_timer_struct     litin=gui_massive_event_loop
+gui_change_mode      fn str="***** GUI_ChangeMode Mode[%d]"
+gui_local_post       str="***** GUI_Local_Post GUI_COMMAND(%d)"
+gui_other_post       str="***** GUI_Other_Post GUI_COMMAND(%d)"
+gui_change_shoot_type_post fn str=GUI_ChangeShootType_Post:%d
+gui_init_event       fn str="-> handleGuiInit"
+CancelDateTimer      fn str=CancelDateTimer call=CancelTimer
+CancelTimer          fn callers=100
+SetTimerAfter        fn callers=100
+SetHPTimerAfterNow   fn callers=50
+SetHPTimerNextTick   fn callers=2
+
+# H.264 encoder
+mvr_config           litin=mvrSetFullHDOptSize litin=mvrSetDefQScale litin=mvrFixQScale
+mvrFixQScale         strin="mvrFixQScale FIX_QSCALE"
+mvrSetDefQScale      str="mvrSetDefQScale DEFAULT_QSCALE_H264 = %d"
+mvrSetFullHDOptSize  fn strin=mvrSetFullHDOptSize
+mvrSetGopOptSizeFULLHD fn strin=mvrSetGopOptSizeFULLHD
+
+# Interrupts (IRQ handler copied from ROM 0xFE0C0680 to RAM 0x4B0)
+pre_isr_hook         word@0xFE0C0820
+post_isr_hook        word@0xFE0C0824
+current_interrupt    manual
+
+# LCD sensor, card
+DispSensorStart      fn str="DispSensorStart -> nop"
+cf_device            litin=0xFE5AA3BC
+sd_device            litin=0xFE5AC668
+fsuDecodePartitionTable fn callers=1
+
+# Memory allocation
+_AllocateMemory      fn str="[MEM] NG AllocateMemory %d" call=GetMemoryInformation
+_FreeMemory          callers=1000
+GetMemoryInformation callers=2
+GetSizeOfMaxRegion   callers=5
+_alloc_dma_memory    fn call=_AllocateMemory
+_free_dma_memory     call=_FreeMemory callers=200
+_malloc              fn callers=50
+_free                fn callers=100
+
+# Message queues (DryOS kernel, RAM copy)
+msg_queue_create     fn assert=KerQueue.c:95
+msg_queue_receive    fn assert=KerQueue.c:307
+TryReceiveMessageQueue fn assert=KerQueue.c:373
+msg_queue_post       callers=30
+msg_queue_count      fn assert=KerQueue.c:561
+
+# PTP, properties
+ptp_register_handler fn call=take_semaphore callers=150
+_prop_request_change fn str=pRequestChange callers=700
+prop_deliver         fn str=pDeliverProperty
+prop_register_slave  fn str=pRegisterSlave
+_prop_cleanup        fn str=./Multicast/PropertyMgr.c callers=80
+
+# Locks, semaphores
+CreateRecursiveLock  fn assert=KerRLock.c:88
+AcquireRecursiveLock fn assert=KerRLock.c:198
+ReleaseRecursiveLock fn assert=KerRLock.c:305
+CreateResLockEntry   fn strin="CreateResLockEntry cannot allocate"
+LockEngineResources  fn strin=LockEngineResources
+UnLockEngineResources fn strin=UnLockEngineResources
+create_named_semaphore fn assert=KerSem.c:94
+take_semaphore       fn assert=KerSem.c:307
+give_semaphore       callers=800 calledby=UnLockEngineResources
+
+# Tasks
+task_create          fn assert=KerTask.c:164 callers=30
+task_trampoline      fn lit=current_task
+msleep               fn assert=KerSys.c:626
+_get_task_info_by_id fn lit=current_task
+current_task         litin=task_trampoline litin=_get_task_info_by_id
+task_max             litin=0x3F9C
+task_dispatch_hook   litin=0x1CF8 litin=0x5904
+
+# Misc
+lv_path_struct       litin=0xFE303080
+LoadCalendarFromRTC  fn callers=4
+vsnprintf            fn str=0123456789 calledby=DryosDebugMsg
+EnableImagePhysicalScreenParameter fn str="EnableImagePhysicalScreenParameter(off)"

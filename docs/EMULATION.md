@@ -33,8 +33,12 @@ only accepts a digest, so a re-pushed tag can never change what we test with). P
 ## Cameras and scenarios
 
 `CAM` selects the camera as qemu-eos names it; the ML platform is `platform/CAM.<fw>`
-(`EOSM` → `EOSM.202`, `1100D` → `1100D.105`). CI runs `EMU_CAMS="1100D EOSM"`.
+(`EOSM` → `EOSM.202`, `1100D` → `1100D.105`, `4000D` → `4000D.110`). CI runs `EMU_CAMS="1100D EOSM 4000D"`.
 The 1100D (DIGIC 4) is the maintainer's second body and validates the whole chain before EOS M ROMs exist.
+The 4000D (DIGIC 4+) is the port in progress (`PORT-4000D.md`): before its scenarios, `run_cam.sh` checks every
+stub against the ROM (`tools/check_stubs.py`, result in `stubs-check.txt`), and its `canon` scenario ends with a
+key probe (`scenario.py --probe-keys`, `PROBE_KEYS`): each emulated key is sent once, the GUI events Canon logs for
+it go to `keys.json` with a screenshot per key, which is how `gui.h` is checked.
 
 | Scenario | Card | Camera bootflag | Meaning |
 |---|---|---|---|
