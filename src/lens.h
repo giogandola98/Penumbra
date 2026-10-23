@@ -565,4 +565,13 @@ int job_state_ready_to_take_pic();
 /* force an update of PROP_LV_LENS outside LiveView */
 void _prop_lv_lens_request_update();
 
+/* clock_task, every 200 ms: outside LiveView, request PROP_LV_LENS once a second while a
+ * consumer of focal length / focus distance / DOF exists (ML menu, info screen, ML activity
+ * holding power save, recent lens_info_want_fresh); otherwise stay quiet so Canon can sleep */
+void lens_info_poll_step();
+
+/* a reader of the dynamic lens data outside the core (Lua) wants fresh values:
+ * keeps the outside-LiveView poll going for the next 10 s */
+void lens_info_want_fresh();
+
 #endif /* _lens_h_ */

@@ -17,6 +17,14 @@
 static int luaCB_lens_index(lua_State * L)
 {
     LUA_PARAM_STRING_OPTIONAL(key, 2, "");
+
+    /* outside LiveView ML refreshes these only while someone reads them (lens_info_poll_step) */
+    if (!strcmp(key, "focal_length") || !strcmp(key, "focus_distance") || !strcmp(key, "focus_pos") ||
+        !strcmp(key, "hyperfocal") || !strcmp(key, "dof_near") || !strcmp(key, "dof_far"))
+    {
+        lens_info_want_fresh();
+    }
+
     /// Get the name of the lens (reported by the lens).
     // @tfield string name readonly
     if(!strcmp(key, "name")) lua_pushstring(L, lens_info.name);

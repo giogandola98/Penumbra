@@ -384,14 +384,6 @@ static void do_this_every_second() // called every second
     }
     #endif
 
-    // DIGIC 8+ uses different props
-    #if defined(CONFIG_DIGIC_45) || defined(CONFIG_DIGIC_VI) || defined(CONFIG_DIGIC_VII)
-    /* update lens info outside LiveView */
-    if (!lv && lens_info.lens_exists)
-    {
-        _prop_lv_lens_request_update();
-    }
-    #endif
 }
 
 // called every 200ms or on request
@@ -435,6 +427,12 @@ seconds_clock_task( void* unused )
             do_this_every_second();
             prev_s_clock = seconds_clock;
         }
+
+        // DIGIC 8+ uses different props
+        #if defined(CONFIG_DIGIC_45) || defined(CONFIG_DIGIC_VI) || defined(CONFIG_DIGIC_VII)
+        /* lens info outside LiveView, only while someone needs it */
+        lens_info_poll_step();
+        #endif
 
         msleep(200);
     }
