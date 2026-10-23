@@ -8,6 +8,31 @@ unpopulated region (repeated 16-byte bus pattern). No serial flash. Model ID 0x4
 Base platform: `1300D.110` (DIGIC 4+, armv5te, `boot-d45-ch.o`, same DryOS generation). Any upstream/community 4000D
 work (forum threads, qemu-eos `2000d_test` branch) is checked first and reused only if the license allows (GPL-2.0).
 
+## Progress (branch `port/4000d`)
+
+| # | Status | Notes |
+|---|---|---|
+| 1 | done (QEMU-EOS-Optimized) | Canon GUI and menu in emulation; see that repo's `docs/models/4000D.md` |
+| 2 | done | 161 of 167 stubs located (152 high, 9 medium confidence), 6 audio/PTP ones missing and not needed by the minimal build; table and method in `firmware/4000D-stubs.md`; `tools/check_stubs.py` re-checks every stub against the ROM in the emulation job |
+| 3 | merged into 4 | the normal build is used directly (QEMU scenario `ml-full`) instead of a separate hello-world target |
+| 4 | in progress | `platform/4000D.110` builds with `FATAL_WARNINGS=y` (CI build job); emulation status below |
+| 5-7 | not started | |
+
+Platform facts used by step 4 (evidence in `firmware/4000D-stubs.md`): main firmware `0xFE0C0000`, kernel copied
+to RAM `0x1900..0x4D0AC` by cstart, BSS to `0x829D4`, Canon heap `0x2D0000..0xD00000` (ML takes
+`0xC80000..0xD00000` through the cache hack at `0xFE0C1B74`, as on the 1300D), init_task literal at `0xFE0C3A9C`,
+firmware signature `0x1B6EF034`, firmware ID `0x80000422`, task structs as `CONFIG_TASK_STRUCT_V2` /
+`CONFIG_TASK_ATTR_STRUCT_V4` (read off `_get_task_info_by_id`), new-style task dispatch hook. Display: the BMP
+overlay is the usual DIGIC 4 720x480 (`CONFIG_4_3_SCREEN`), scaled by the hardware to the 2.7" 230k-dot panel.
+
+Minimal feature set (`features.h`): no LiveView, movie, raw, FPS or audio; debug menus (tasks, GUI events, free
+memory, screenshot) only. Constants of those code paths that could not be located yet are marked
+"1300D value, not verified" in `consts.h` and must be checked before the feature is enabled.
+
+Buttons: the 4000D shares the 1200D/1300D layout (Av and Erase on one key), so `gui.h` starts from the 1300D
+codes; the `canon` emulation scenario sends each emulated key once and logs the GUI events Canon derives from it
+(`keys.json`), which checks them.
+
 ## Steps
 | # | Step | Verified by |
 |---|---|---|

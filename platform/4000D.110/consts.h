@@ -60,8 +60,8 @@
 
 #define FOCUS_CONFIRMATION 0 // not located yet (LiveView focus info is off)
 
-// 4000D: main controller ([MC]) struct 0x351A4; DisplaySensorStop writes +0x18.
-// +0x1C is the half-shutter flag by analogy with the 1300D (0x359A0 + 0x1C), not verified yet.
+// 4000D: main controller ([MC]) struct 0x351A4 (1300D 0x359A0). +0x1C is set to 1 on "cam event metering
+// start" (half-shutter) and cleared on metering end; DisplaySensorStop writes +0x18.
 #define HALFSHUTTER_PRESSED (*(int *)(0x351A4 + 0x1C))
 #define DISPLAY_SENSOR_POWERED (*(int *)(0x351A4 + 0x18))
 
