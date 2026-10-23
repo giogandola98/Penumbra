@@ -16,10 +16,12 @@ work (forum threads, qemu-eos `2000d_test` branch) is checked first and reused o
 | 3 | **Minimal boot** (`minimal` / hello-world target) | Runs in QEMU, prints on screen |
 | 4 | **Platform dir** `platform/4000D.110` (stubs.S, consts.h, internals.h, features.h minimal) | Builds with FATAL_WARNINGS=y; boots ML menu in QEMU |
 | 5 | **Features** enabled incrementally (photo profile first: overlays, intervalometer, bracketing, powersave hold) | CI emulation tests per feature |
-| 6 | **Boot flag / installer**: ML-SETUP.FIR for 4000D or card-boot method used by the 1300D port | Reviewed by the maintainer; hardware step |
+| 6 | **Boot flag**: no signed installer is needed. Canon's own `EnableBootDisk` routine, present in the 4000D ROM, is invoked over USB with MLinstall (GPL-2.0, github.com/petabyt/mlinstall), as on the 1300D; reported working on a 4000D fw 1.0.1. The flags are the first 16 bytes of ROM1 (FIR, BOOT, RAM, UPD; currently 0, 0, -1, -1). First emulate the flag write in QEMU to see exactly which flash range Canon erases and rewrites | QEMU trace of the flash write; then on hardware with the maintainer: read-only device info, one `EnableBootDisk` (full battery, menu not LiveView, no card I/O), dumper re-run shows BOOT set |
 | 7 | **Hardware** (last, maintainer): read-only smoke test first, then features | Maintainer sign-off |
 
 ## Risks
-- Enabling the camera boot flag is the only step that writes to the camera; it is done last, by the maintainer, following
-  the method already proven on the 1300D.
+- Enabling the camera boot flag is the only step that writes to the camera (one Canon flash-block rewrite). Low but
+  non-zero risk: a power loss during that write could corrupt the block; never in LiveView or during sensor cleaning.
+  It is reversible over USB (`DisableBootDisk`). A bad build on a bootable card only hangs at power-on (remove battery
+  and card to recover); it does not brick the camera.
 - Stubs found by pattern matching can be wrong in subtle ways; each must be validated in emulation before use.
