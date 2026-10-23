@@ -720,7 +720,10 @@ static void audio_menus_init()
 }
 
 
+/* photo profile: skip the (empty) Audio menu */
+#ifndef CONFIG_PROFILE_PHOTO
 INIT_FUNC("audio.init", audio_menus_init);
+#endif
 
 
 // for PicoC

@@ -99,12 +99,16 @@ void EngDrvOutLV(uint32_t reg, uint32_t val)
     _EngDrvOut(reg, val);
 }
 
+/* the definitions live in the FEATURE_FPS_OVERRIDE section (photo profile builds without it) */
+#if defined(FEATURE_FPS_OVERRIDE) && defined(CONFIG_FPS_UPDATE_FROM_EVF_STATE)
 static void fps_set_timers_from_evfstate(int timerA, int timerB, int wait);
 static void fps_disable_timers_evfstate();
+#define FPS_EVF_STATE_TIMERS
+#endif
 
 static void EngDrvOutFPS(uint32_t reg, uint32_t val)
 {
-#ifdef CONFIG_FPS_UPDATE_FROM_EVF_STATE
+#ifdef FPS_EVF_STATE_TIMERS
     // some cameras seem to prefer changing FPS registers from EVF (LiveView) task
     static int a = 1; // Avoid uninit usage if somebody calls with CONFIRM_CHANGES
     static int b = 1; // before the register vals.
@@ -1212,7 +1216,7 @@ static void fps_reset()
 
     fps_register_reset();
 
-    #ifdef CONFIG_FPS_UPDATE_FROM_EVF_STATE
+    #ifdef FPS_EVF_STATE_TIMERS
     fps_disable_timers_evfstate();
     #endif
 
@@ -1713,7 +1717,9 @@ static void fps_init()
     menu_add( "Movie", fps_menu, COUNT(fps_menu) );
 }
 
+#ifdef FEATURE_FPS_OVERRIDE /* the menu is empty without it */
 INIT_FUNC("fps", fps_init);
+#endif
 
 static void fps_read_current_timer_values()
 {

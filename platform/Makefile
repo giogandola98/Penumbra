@@ -27,6 +27,9 @@ CONFIG_DEBUGMSG = 0
 CONFIG_CCACHE   = n
 CONFIG_TCC      = y
 CONFIG_MODULES  = y
+
+# Module list for magiclantern.zip; profiles may override it
+MODULES_INCLUDED ?= modules.included
 CONFIG_TINYPY   = n
 
 # Work in progress - attempt to emulate both Canon firmware and autoexec.bin
@@ -248,12 +251,12 @@ $(BUILD_DIR)/$(ML_MODULES_SYM_NAME): $(BUILD_DIR)/magiclantern.sym | $(BUILD_DIR
 	$(CP) $(BUILD_DIR)/magiclantern.sym $(BUILD_DIR)/$(ML_MODULES_SYM_NAME)
 
 zip_contents:: $(BUILD_DIR)/$(ML_MODULES_SYM_NAME) \
-               modules.hidden modules.included \
+               modules.hidden $(MODULES_INCLUDED) \
                $(MODULES_DIR)/$(BUILD_DIR)/default_modules_complete | $(BUILD_DIR)
 	$(CP) $(BUILD_DIR)/$(ML_MODULES_SYM_NAME) $(ZIP_MODULES_DIR)/
 	$(CP) $(MODULES_DIR)/$(BUILD_DIR)/*.mo $(CAM_MODULES_DIR)/
 	$(PYTHON) $(PLATFORM_DIR)/create_hid_files.py modules.hidden $(ZIP_MODULES_DIR)
-	$(PYTHON) $(PLATFORM_DIR)/copy_included_modules.py modules.included $(CAM_MODULES_DIR) $(ZIP_MODULES_DIR)
+	$(PYTHON) $(PLATFORM_DIR)/copy_included_modules.py $(MODULES_INCLUDED) $(CAM_MODULES_DIR) $(ZIP_MODULES_DIR)
 endif
 
 # If installer/99D/ML-SETUP.FIR exists, use it, otherwise
@@ -384,6 +387,10 @@ ML_SRC_OBJS_00 = \
     patch.o \
     picstyle.o \
     cache.o
+
+# Per-camera profiles (see docs/BUILD-PROFILES.md) may drop core objects
+# by listing them in ML_SRC_OBJS_EXCLUDE before including this file.
+ML_SRC_OBJS_00 := $(filter-out $(ML_SRC_OBJS_EXCLUDE), $(ML_SRC_OBJS_00))
 ML_SRC_OBJS = $(addprefix $(BUILD_DIR)/, $(ML_SRC_OBJS_00))
 
 # This block handles the optional object files,
