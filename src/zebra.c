@@ -44,6 +44,7 @@
 #include "imgconv.h"
 #include "falsecolor.h"
 #include "histogram.h"
+#include "overlay_kernels.h"
 
 /* todo: move battery stuff in battery.c */
 #include "battery.h"
@@ -384,6 +385,19 @@ static uint8_t* bvram_mirror = 0;
 uint8_t* get_bvram_mirror() { return bvram_mirror; }
 //~ #define bvram_mirror bmp_vram_idle()
 
+/* LV buffer, overlay and the mapping between them, for the pixel kernels */
+static void overlay_geom(struct ovk_geom * g, const uint8_t * lv, uint8_t * bvram, int x0)
+{
+    g->lv = lv;
+    g->lv_pitch = vram_lv.pitch;
+    g->sy = bm2lv.sy;
+    g->ty = bm2lv.ty;
+    g->lv_x = &BM2LV_X(x0);
+    g->bmp = bvram;
+    g->mirror = bvram_mirror;
+    g->bmp_pitch = BMPPITCH;
+}
+
 #include "cropmarks.c"
 
 PROP_HANDLER(PROP_LV_OUTPUT_TYPE)
@@ -487,36 +501,6 @@ static uint8_t* waveform = 0;
  */
 
 #if defined(FEATURE_HISTOGRAM) || defined(FEATURE_WAVEFORM) || defined(FEATURE_VECTORSCOPE)
-#ifdef FEATURE_HISTOGRAM
-static void hist_add_pixel(uint32_t pixel, int Y)
-{
-    if (histogram.is_rgb)
-    {
-        int R, G, B;
-        //~ uyvy2yrgb(pixel, &Y, &R, &G, &B);
-        COMPUTE_UYVY2YRGB(pixel, Y, R, G, B);
-        // YRGB range: 0-255
-        uint32_t R_level = (R * HIST_WIDTH) >> 8;
-        uint32_t G_level = (G * HIST_WIDTH) >> 8;
-        uint32_t B_level = (B * HIST_WIDTH) >> 8;
-        
-        histogram.hist_r[R_level & (HIST_WIDTH-1)]++;
-        histogram.hist_g[G_level & (HIST_WIDTH-1)]++;
-        histogram.hist_b[B_level & (HIST_WIDTH-1)]++;
-    }
-    
-    /* luma component is always computed, since we need histogram.max */
-    /* and it's much less expensive than RGB anyway */
-    histogram.total_px++;
-    uint32_t hist_level = (Y * HIST_WIDTH) >> 8;
-
-    // Ignore the 0 bin.  It generates too much noise
-    unsigned count = ++ (histogram.hist[ hist_level & (HIST_WIDTH-1)]);
-    if( hist_level && count > histogram.max )
-        histogram.max = count;
-}
-#endif
-
 #ifdef FEATURE_WAVEFORM
 static inline void waveform_add_pixel(int x, int Y)
 {
@@ -576,6 +560,28 @@ hist_build()
     
     int mz = nondigic_zoom_overlay_enabled();
     int off = get_y_skip_offset_for_histogram();
+
+    if (hist_draw && !histogram.is_raw)
+    {
+        #if HIST_WIDTH != OVK_HIST_BINS || MZ_WHITE != OVK_MZ_WHITE || MZ_BLACK != OVK_MZ_BLACK || MZ_GREEN != OVK_MZ_GREEN
+        #error histogram kernel out of sync with histogram.h
+        #endif
+        /* luma, R, G, B histograms are consecutive in struct Histogram */
+        _Static_assert(offsetof(struct Histogram, hist_b) - offsetof(struct Histogram, hist) == 3 * sizeof(histogram.hist),
+                       "histogram arrays must be contiguous");
+        struct ovk_geom g;
+        struct ovk_yuv2rgb t = { yuv2rgb_RV, yuv2rgb_GU, yuv2rgb_GV, yuv2rgb_BU };
+        overlay_geom(&g, (const uint8_t *) buf, 0, os.x0);
+        histogram.total_px = ovk_hist(&g, os.x0, os.x_max, os.y0 + off, os.y_max - off, mz,
+                                      &histogram.hist, histogram.is_rgb ? &t : 0);
+        histogram.max = ovk_hist_max(histogram.hist);
+    }
+
+    if (!waveform_draw && !vectorscope_draw)
+    {
+        return;
+    }
+
     for( y = os.y0 + off; y < os.y_max - off; y += 2 )
     {
         for( x = os.x0 ; x < os.x_max ; x += 2 )
@@ -587,11 +593,6 @@ hist_build()
                 continue;
 
             int Y = UYVY_GET_AVG_Y(pixel);
-            
-            if (hist_draw && !histogram.is_raw)
-            {
-                hist_add_pixel(pixel, Y);
-            }
             
             #ifdef FEATURE_WAVEFORM
             if (waveform_draw) 
@@ -1161,6 +1162,19 @@ static void zebra_update_lut()
 static int zebra_digic_dirty = 0;
 #endif
 
+/* colour words of the zebra classes (see overlay_kernels.h) */
+static uint32_t zebra_luma_class_color(int cls, int y)
+{
+    return cls == OVK_ZEBRA_LUMA_OVER  ? zebra_color_word_row(COLOR_RED,  y) :
+           cls == OVK_ZEBRA_LUMA_UNDER ? zebra_color_word_row(COLOR_BLUE, y) : 0;
+}
+
+static uint32_t zebra_rgb_class_color(int cls, int y)
+{
+    if (cls == OVK_ZEBRA_RGB_UNDER) return zebra_rgb_color(1, 0, 0, 0, y);
+    return zebra_rgb_color(0, cls & 4, cls & 2, cls & 1, y);
+}
+
 static void draw_zebras( int Z )
 {
     uint8_t * const bvram = bmp_vram_real();
@@ -1253,158 +1267,20 @@ static void draw_zebras( int Z )
         uint8_t * lvram = get_yuv422_vram()->vram;
         if (!lvram) return;
 
-        int zlr = zlh;
-        int zlg = zlh;
-        int zlb = zlh;
-
         // draw zebra in 16:9 frame
         // y is in BM coords
         int off = get_y_skip_offset_for_overlays();
-        for(int y = os.y0 + off; y < os.y_max - off; y += 2 )
+        struct ovk_geom g;
+        overlay_geom(&g, lvram, bvram, os.x0);
+
+        if (zebra_colorspace == 1 && !EXT_MONITOR_RCA) // rgb
         {
-            #define color_over           zebra_color_word_row(COLOR_RED,  y)
-            #define color_under          zebra_color_word_row(COLOR_BLUE, y)
-            #define color_over_2         zebra_color_word_row(COLOR_RED,  y+1)
-            #define color_under_2        zebra_color_word_row(COLOR_BLUE, y+1)
-            
-            #define color_rgb_under      zebra_rgb_color(1, 0, 0, 0, y)
-            #define color_rgb_under_2    zebra_rgb_color(1, 0, 0, 0, y+1)
-            
-            #define color_rgb_clipR      zebra_rgb_color(0, 1, 0, 0, y)
-            #define color_rgb_clipR_2    zebra_rgb_color(0, 1, 0, 0, y+1)
-            #define color_rgb_clipG      zebra_rgb_color(0, 0, 1, 0, y)
-            #define color_rgb_clipG_2    zebra_rgb_color(0, 0, 1, 0, y+1)
-            #define color_rgb_clipB      zebra_rgb_color(0, 0, 0, 1, y)
-            #define color_rgb_clipB_2    zebra_rgb_color(0, 0, 0, 1, y+1)
-            
-            #define color_rgb_clipRG     zebra_rgb_color(0, 1, 1, 0, y)
-            #define color_rgb_clipRG_2   zebra_rgb_color(0, 1, 1, 0, y+1)
-            #define color_rgb_clipGB     zebra_rgb_color(0, 0, 1, 1, y)
-            #define color_rgb_clipGB_2   zebra_rgb_color(0, 0, 1, 1, y+1)
-            #define color_rgb_clipRB     zebra_rgb_color(0, 1, 0, 1, y)
-            #define color_rgb_clipRB_2   zebra_rgb_color(0, 1, 0, 1, y+1)
-            
-            #define color_rgb_clipRGB    zebra_rgb_color(0, 1, 1, 1, y)
-            #define color_rgb_clipRGB_2  zebra_rgb_color(0, 1, 1, 1, y+1)
-
-            uint32_t * const v_row = (uint32_t*)( lvram        + BM2LV_R(y)    );  // 2 pixels
-            uint32_t * const b_row = (uint32_t*)( bvram        + BM_R(y)       );  // 4 pixels
-            uint32_t * const m_row = (uint32_t*)( bvram_mirror + BM_R(y)       );  // 4 pixels
-            
-            uint32_t* lvp; // that's a moving pointer through lv vram
-            uint32_t* bp;  // through bmp vram
-            uint32_t* mp;  // through mirror
-
-            for (int x = os.x0; x < os.x_max; x += 4)
-            {
-                lvp = v_row + (BM2LV_X(x) >> 1);
-                bp = b_row + (x >> 2);
-                mp = m_row + (x >> 2);
-                #define BP (*bp)
-                #define MP (*mp)
-                #define BN (*(bp + BMPPITCH/4))
-                #define MN (*(mp + BMPPITCH/4))
-                if (BP != 0 && BP != MP) { little_cleanup(bp, mp); continue; }
-                if (BN != 0 && BN != MN) { little_cleanup(bp + (BMPPITCH >> 2), mp + (BMPPITCH >> 2)); continue; }
-                if ((MP & 0x80808080) || (MN & 0x80808080)) continue;
-                
-                if (zebra_colorspace == 1 && !EXT_MONITOR_RCA) // rgb
-                {
-                    int Y, R, G, B;
-                    //~ uyvy2yrgb(*lvp, &Y, &R, &G, &B);
-                    COMPUTE_UYVY2YRGB(*lvp, Y, R, G, B);
-
-                    if(unlikely(Y < zll)) // underexposed
-                    {
-                        BP = MP = color_rgb_under;
-                        BN = MN = color_rgb_under_2;
-                    }
-                    else
-                    {
-                        //~ BP = MP = zebra_rgb_color(Y < zll, R > zlh, G > zlh, B > zlh, y);
-                        //~ BN = MN = zebra_rgb_color(Y < zll, R > zlh, G > zlh, B > zlh, y+1);
-
-                        if (unlikely(R > zlr)) // R clipped
-                        {
-                            if (unlikely(G > zlg)) // RG clipped
-                            {
-                                if (B > zlb) // RGB clipped (all of them)
-                                {
-                                    BP = MP = color_rgb_clipRGB;
-                                    BN = MN = color_rgb_clipRGB_2;
-                                }
-                                else // only R and G clipped
-                                {
-                                    BP = MP = color_rgb_clipRG;
-                                    BN = MN = color_rgb_clipRG_2;
-                                }
-                            }
-                            else // R clipped, G not clipped
-                            {
-                                if (unlikely(B > zlb)) // only R and B clipped
-                                {
-                                    BP = MP = color_rgb_clipRB;
-                                    BN = MN = color_rgb_clipRB_2;
-                                }
-                                else // only R clipped
-                                {
-                                    BP = MP = color_rgb_clipR;
-                                    BN = MN = color_rgb_clipR_2;
-                                }
-                            }
-                        }
-                        else // R not clipped
-                        {
-                            if (unlikely(G > zlg)) // R not clipped, G clipped
-                            {
-                                if (unlikely(B > zlb)) // only G and B clipped
-                                {
-                                    BP = MP = color_rgb_clipGB;
-                                    BN = MN = color_rgb_clipGB_2;
-                                }
-                                else // only G clipped
-                                {
-                                    BP = MP = color_rgb_clipG;
-                                    BN = MN = color_rgb_clipG_2;
-                                }
-                            }
-                            else // R not clipped, G not clipped
-                            {
-                                if (unlikely(B > zlb)) // only B clipped
-                                {
-                                    BP = MP = color_rgb_clipB;
-                                    BN = MN = color_rgb_clipB_2;
-                                }
-                                else // nothing clipped
-                                {
-                                    BN = MN = BP = MP = 0;
-                                }
-                            }
-                        }
-                    }
-                }
-                else // luma
-                {
-                    int p0 = (*lvp) >> 8 & 0xFF;
-                    if (unlikely(p0 > zlh))
-                    {
-                        BP = MP = color_over;
-                        BN = MN = color_over_2;
-                    }
-                    else if (unlikely(p0 < zll))
-                    {
-                        BP = MP = color_under;
-                        BN = MN = color_under_2;
-                    }
-                    else
-                        BN = MN = BP = MP = 0;
-                }
-                    
-                #undef MP
-                #undef BP
-                #undef BN
-                #undef MN
-            }
+            struct ovk_yuv2rgb t = { yuv2rgb_RV, yuv2rgb_GU, yuv2rgb_GV, yuv2rgb_BU };
+            ovk_zebra(&g, os.x0, os.x_max, os.y0 + off, os.y_max - off, zlh, zll, &t, zebra_rgb_class_color);
+        }
+        else // luma
+        {
+            ovk_zebra(&g, os.x0, os.x_max, os.y0 + off, os.y_max - off, zlh, zll, 0, zebra_luma_class_color);
         }
     }
 }
@@ -1701,6 +1577,30 @@ static void focus_found_pixel_playback(int x, int y, int e, int thr, uint8_t * c
     bmp_putpixel_fast(bvram, x, y, color);
     bmp_putpixel_fast(bvram, x+1, y, color);
 }
+
+/* focus peaking hits (see ovk_peak_scan); returning 1 skips the rest of the row */
+struct peak_ctx
+{
+    uint8_t * bvram;
+    int thr;
+    int draw;
+};
+
+static int focus_peak_hit_lv(void * ctx, int x, int y, int e)
+{
+    struct peak_ctx * c = ctx;
+    if (unlikely(dirty_pixels_num >= MAX_DIRTY_PIXELS)) return 1; // threshold too low, abort
+    focus_found_pixel(x, y, e, c->thr, c->bvram);
+    return 0;
+}
+
+static int focus_peak_hit_playback(void * ctx, int x, int y, int e)
+{
+    struct peak_ctx * c = ctx;
+    if (unlikely(dirty_pixels_num >= MAX_DIRTY_PIXELS)) return 1; // threshold too low, abort
+    if (c->draw) focus_found_pixel_playback(x, y, e, c->thr, c->bvram);
+    return 0;
+}
 #endif
 
 // returns how the focus peaking threshold changed
@@ -1778,8 +1678,6 @@ draw_zebra_and_focus( int Z, int F )
         yEnd   = anamorphic_squeeze_bmp_y(yEnd);
         #endif
 
-        const uint8_t* p8; // that's a moving pointer
-        
         zebra_update_lut();
 
         /** simple Laplacian filter
@@ -1793,54 +1691,30 @@ draw_zebra_and_focus( int Z, int F )
          *  uyvy uyvy uyvy
          */
 
+        struct ovk_peak pk = {
+            .lv = (const uint8_t *) vram,
+            .lv_pitch = vram_lv.pitch,
+            .sy = bm2lv.sy, .ty = bm2lv.ty,
+            .xoff = &bm_lv_x_cache[xStart - BMP_W_MINUS],
+            .x0 = xStart, .x1 = xEnd,
+            .y0 = yStart, .y1 = yEnd,
+            .filter_edges = focus_peaking_filter_edges,
+            .thr = thr,
+        };
+        struct peak_ctx ctx = { .bvram = bvram, .thr = thr, .draw = (F == 1) };
+
         int n_total = 0;
         if (lv) // fast, realtime
         {
             n_total = ((yEnd - yStart) * (xEnd - xStart)) / 6;
-            for(int y = yStart; y < yEnd; y += 3)
-            {
-                uint32_t row = vram + BM2LV_R(y);
-                
-                for (int x = xStart; x < xEnd; x += 2)
-                {
-                    p8 = (uint8_t *)(row + bm_lv_x_cache[x - BMP_W_MINUS]);
-                     
-                    int e = peak_d2xy(p8);
-                    
-                    /* executed for 1% of pixels */
-                    if (unlikely(e >= thr))
-                    {
-                        n_over++;
-                        if (unlikely(dirty_pixels_num >= MAX_DIRTY_PIXELS)) break; // threshold too low, abort
-                        focus_found_pixel(x, y, e, thr, bvram);
-                    }
-                }
-            }
+            pk.xstep = 2; pk.ystep = 3;
+            n_over = ovk_peak_scan(&pk, focus_peak_hit_lv, &ctx);
         }
         else // playback - can be slower and more accurate
         {
             n_total = ((yEnd - yStart) * (xEnd - xStart));
-            for(int y = yStart; y < yEnd; y ++)
-            {
-                uint32_t row = vram + BM2LV_R(y);
-                
-                for (int x = xStart; x < xEnd; x ++)
-                {
-                    p8 = (uint8_t *)(row + bm_lv_x_cache[x - BMP_W_MINUS]);
-                    int e = peak_d2xy(p8);
-                    
-                    /* executed for 1% of pixels */
-                    if (unlikely(e >= thr))
-                    {
-                        n_over++;
-
-                        if (unlikely(dirty_pixels_num >= MAX_DIRTY_PIXELS)) // threshold too low, abort
-                            break;
-
-                        if (F==1) focus_found_pixel_playback(x, y, e, thr, bvram);
-                    }
-                }
-            }
+            pk.xstep = 1; pk.ystep = 1;
+            n_over = ovk_peak_scan(&pk, focus_peak_hit_playback, &ctx);
         }
 
         //~ bmp_printf(FONT_LARGE, 10, 50, "%d ", thr);
