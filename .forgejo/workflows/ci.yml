@@ -5,9 +5,8 @@ jobs:
     runs-on: linux-podman
     steps:
       - run: |
-          podman --version; podman info 2>&1 | grep -E 'rootless|graphRoot|cgroupVersion|storage' | head
-          podman images 2>&1 | head
-          curl -sI -m 20 https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-arm-none-eabi.tar.xz | head -3
+          podman --version; podman info 2>&1 | grep -E 'rootless|graphRoot|cgroupVersion|storage'
+          curl -sI -m 20 https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-arm-none-eabi.tar.xz | sed -n 1,3p
           timeout 120 podman run --rm docker.io/library/debian:bookworm-slim sh -c 'echo inside; id; getent hosts deb.debian.org' 2>&1 | tail -5
           env | grep -E '^(GITHUB_SERVER_URL|GITHUB_REPOSITORY)='
-          ls -ld $PWD; ls $PWD | head -3
+          ls -ld $PWD; ls $PWD
