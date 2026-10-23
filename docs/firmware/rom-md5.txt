@@ -2,3 +2,7 @@
 # generic package canon-rom, version <CAM>-<FW>). Used by CI to verify downloads.
 1100D-105 ROM0.BIN f9329f8fa29b166c5249986a1aeb366c
 1100D-105 ROM1.BIN a9538f296a1549aec5546708b4f3047a
+# 4000D fw 1.1.0 (model 0x422), portable dumper. ROM0 is an unpopulated region (16-byte bus pattern repeated),
+# so its MD5 differs between reads (dumper logged 66354cabd287d45faae4c6158ba09606); only ROM1 carries firmware.
+4000D-110 ROM0.BIN 387d96a501c80ee5a1291e6a4bbbb636
+4000D-110 ROM1.BIN 58ff143b77ea4d7d9d19cfef21f17bff
