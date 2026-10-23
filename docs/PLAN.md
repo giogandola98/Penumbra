@@ -25,9 +25,13 @@ before any hardware run.
 | 3 | **Emulation harness** | qemu-eos built in container; headless boot → Canon GUI → ML menu; key-injection + screenshot tests for EOSM; QEMU plugin counting wakeups/IRQs/task switches | CI job: boot test + idle-wakeup baseline of upstream |
 | 4 | **Photo profile** | Feature set trimmed: keep zebras, focus peaking, histogram, magic zoom, intervalometer, bracketing/HDR, bulb timer, auto-ETTR, dual ISO, (trap focus if feasible), optional Lua; drop video/RAW/MLV/crop_rec/FPS/bitrate/audio/games/bench | Smaller binary + fewer tasks, all tests green |
 | 5 | **Power work** | Polling → event-driven (prop handlers, semaphores, msg queues); task consolidation; overlays run only while LV is visible and something changed; never block Canon auto-power-off/LV powersave | Idle wakeups ≪ baseline; sleep/power-off paths covered by emulation tests |
+| 5b | **Event-driven core** | One ML core task blocked on a single message queue (Canon events, prop changes, LV vsync, one-shot timers) replaces the polling tasks one at a time (strangler pattern); features register handlers/timers only while enabled ("cold" when off); Lua kept as optional module, never in hot paths | Idle wakeups → ~0 in LiveView; each migrated task verified in emulation before the next. Designed after phase 2 RE of Canon's event/power model |
 | 6 | **Overlay performance** | Peaking/zebra/histogram rewritten for ARMv5 (word-wide ops, decimation, frame skipping, LUTs); host unit + benchmark tests on YUV422 frames | Bit-exact vs reference, measurable cycle reduction |
 | 7 | **Stability** | Known EOSM bugs triaged/fixed; long-run soak in emulation | Soak test green |
 | 8 | **Hardware** *(last, with user)* | Install guide, rollback procedure, A/B battery protocol (shots per charge, LV minutes) | User sign-off |
+
+## Design decisions
+- Stay in C (no rewrite in Rust/other): power cost comes from the polling architecture, not the language; ML's value is 13 years of reverse-engineered camera knowledge. Hand-written ARMv5TE assembly only for proven hot pixel loops, guarded by host bit-exact tests.
 
 ## CI pipeline (Forgejo, per push)
 build (size + task-count report) → static analysis (cppcheck, -Wall -Werror on new code) → host unit tests
