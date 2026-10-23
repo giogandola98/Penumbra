@@ -1,12 +1,54 @@
-name: probe
-on: [push]
+name: ci
+on:
+  push:
+  pull_request:
+
 jobs:
-  probe:
+  build:
+    # Label maps to the host executor of runner linux-podman-105 (no container: support there),
+    # which has podman. So the job builds ci/Containerfile and runs every step inside it.
     runs-on: linux-podman
+    env:
+      IMAGE: ml-ci
     steps:
-      - run: |
-          podman --version; podman info 2>&1 | grep -E 'rootless|graphRoot|cgroupVersion|storage'
-          curl -sI -m 20 https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-arm-none-eabi.tar.xz | sed -n 1,3p
-          timeout 120 podman run --rm docker.io/library/debian:bookworm-slim sh -c 'echo inside; id; getent hosts deb.debian.org' 2>&1 | tail -5
-          env | grep -E '^(GITHUB_SERVER_URL|GITHUB_REPOSITORY)='
-          ls -ld $PWD; ls $PWD
+      - name: Checkout
+        run: |
+          rm -rf src-checkout && mkdir src-checkout && cd src-checkout
+          git init -q .
+          git -c "http.extraheader=Authorization: Bearer ${{ github.token }}" \
+              fetch -q --depth=1 "${{ github.server_url }}/${{ github.repository }}.git" "${{ github.sha }}"
+          git checkout -q FETCH_HEAD
+
+      - name: Build CI image
+        run: |
+          # Content-addressed tag: unchanged Containerfile => podman reuses cached layers/image.
+          tag=$(sha256sum src-checkout/ci/Containerfile | cut -c1-12)
+          echo "$tag" > .image-tag
+          podman image exists "$IMAGE:$tag" || podman build -q -t "$IMAGE:$tag" -f src-checkout/ci/Containerfile src-checkout/ci
+
+      - name: Build EOSM.202 (FATAL_WARNINGS=y)
+        run: |
+          podman run --rm -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/build.sh
+
+      - name: Host tests
+        run: |
+          podman run --rm -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/host-tests.sh
+
+      - name: cppcheck (report only)
+        continue-on-error: true
+        run: |
+          podman run --rm -v "$PWD/src-checkout:/work" -w /work "$IMAGE:$(cat .image-tag)" ci/cppcheck.sh
+
+      - name: Collect artifacts
+        if: always()
+        run: |
+          mkdir -p artifacts
+          cp -f src-checkout/platform/EOSM.202/build/magiclantern.zip src-checkout/build-report.txt src-checkout/cppcheck-report.txt artifacts/ || true
+          ls -l artifacts
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: ml-optimized-eosm202
+          path: artifacts/
