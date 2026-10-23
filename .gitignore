@@ -1,0 +1,7 @@
+.env
+*.credentials
+build/
+*.o
+*.elf
+*.bin
+!tests/fixtures/**/*.bin
