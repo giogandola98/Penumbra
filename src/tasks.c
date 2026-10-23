@@ -341,9 +341,11 @@ static void tasks_wakeup_for_shutdown()
     extern void menu_wakeup_for_shutdown();
     extern void notifybox_wakeup_for_shutdown();
     extern void focus_task_wakeup_for_shutdown();
+    extern void console_wakeup_for_shutdown();
     menu_wakeup_for_shutdown();
     notifybox_wakeup_for_shutdown();
-    focus_task_wakeup_for_shutdown();
+    focus_task_wakeup_for_shutdown();   /* also focus_misc_task */
+    console_wakeup_for_shutdown();
 #if defined(CONFIG_MODULES)
     extern void module_task_wakeup_for_shutdown();
     module_task_wakeup_for_shutdown();

@@ -163,3 +163,60 @@ Full compiles the same timeouts and a constant-false check; its `autoexec.bin` s
 - If arrow shortcuts are active, key repeat keeps the old 500 ms poll (no regression, and no gain in that mode).
 - A future task that adds a `give_semaphore(gui_sem)` for anything other than a toggle would be treated as a toggle.
   This was already true before.
+
+## 4. Housekeeping polls (audit row 7). Photo only, except the `hsp` timestamp
+
+**`focus_misc_task`** (`focus.c`).
+- On EOSM, trap focus is compiled out (`features.h`).
+  The task then did only two things: tick `hsp_countdown` and plot the focus graph after `PROP_LV_FOCUS_DATA`.
+- `hsp_countdown` (3 × 100 ms) is now a timestamp, `hsp_time` from `get_ms_clock()`, checked as `< 300 ms`.
+  The behaviour is the same and no task has to tick it.
+  This applies to both profiles. It is read only under `CONFIG_LV_FOCUS_INFO`, which EOSM does not define, so it is dead code on this camera either way.
+- With `CONFIG_PROFILE_PHOTO && !FEATURE_TRAP_FOCUS` (`FOCUS_MISC_EVENT_DRIVEN`), the task blocks on `focus_misc_sem`.
+  `update_focus_mag()` gives it on the clean→dirty edge of `focus_graph_dirty`.
+  The task clears the flag, plots if the graph is enabled, and sleeps 100 ms, which keeps the old 10 Hz cap.
+  The flag is cleared once after the semaphore is created, so an update that arrived before the semaphore existed cannot block later wakeups.
+  With trap focus enabled, the old 10 Hz poll stays, because it must watch the AF-mode dialog.
+
+**`debug_task`** (`debug.c`).
+- It polls at 200 ms only while there is something to time or watch: the screenshot countdown, the hexdump view, or the Canon menu (`MENU_MODE`, for the format-dialog hijack).
+- Otherwise it polls at 1 s.
+- Crash/assert logs and core dumps are requested from the assert handler and the task-dispatch hook.
+  Those contexts must not give semaphores, so they are not made event-driven.
+  `crash_log_step()` and the `ErrForCamera` dialog check keep running, at 1 Hz.
+
+**`console_task`** (`console.c`).
+- While the console is hidden and already erased, the task blocks on `console_wake_sem`.
+- `console_show()` gives the semaphore.
+  `console_visible` is re-read after every wake, and the semaphore counts gives, so a show that races with the check is not lost.
+- `console_hide()` needs no wake: the task is already running at 5 Hz while the console is visible, erases it once (`dirty`), and then blocks.
+- `ml_shutdown()` also wakes `console_task` and `focus_misc_task` (`tasks_wakeup_for_shutdown`).
+
+**Gain.** focus_misc 10 + debug 5→1 + console 5 = **−19 wakeups/s** at idle.
+Inside the Canon menu, `debug_task` stays at 5/s.
+
+**Profiles.** Photo only (`#ifdef CONFIG_PROFILE_PHOTO`), except the `hsp_time` timestamp.
+The full `autoexec.bin` size is unchanged (455,232 B).
+
+**Verify (QEMU).**
+1. Wakeups (method 0), idle photo screen, 30 s:
+   - `focus_misc_task` 0/s (parent: 10/s);
+   - `console_task` 0/s (parent: 5/s);
+   - `debug_task` ≈ 1/s (parent: 5/s).
+2. Open the Canon menu (`sendkey` MENU): `debug_task` ≈ 5/s.
+   Go to *Format card*: the "Keep ML" option is drawn as before (`HijackFormatDialogBox_main`).
+3. Crash log: from the ML Debug menu, run a test that asserts, or call `ml_assert_handler` through GDB.
+   Within about 1 s, `CRASH00.LOG` / `ASSERT00.LOG` appears on the SD image.
+4. Console: show it (Debug → Show console, or a Lua `console.show()`).
+   It appears and `console_task` runs at 5/s.
+   Hide it: the console is erased once, then `console_task` returns to 0/s.
+5. Focus graph: QEMU does not emit `PROP_LV_FOCUS_DATA`.
+   Inject it with GDB (`call prop_request_change(PROP_LV_FOCUS_DATA, …)`) or break on `update_focus_mag`.
+   Each burst wakes `focus_misc_task` at most 10 times per second, and with the graph enabled `plot_focus_mag` is hit.
+6. Shutdown test (§0) still completes.
+
+**Risks.**
+- A crash or assert log is written up to 1 s later than before (≤ 1.2 s instead of ≤ 0.2 s).
+  If the camera locks up within that second, the log can be lost.
+  This is the main item to check on hardware, as the audit notes.
+- If trap focus is ever re-enabled on EOSM, `FOCUS_MISC_EVENT_DRIVEN` turns off by itself and the 10 Hz poll returns.
