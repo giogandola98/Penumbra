@@ -18,6 +18,7 @@ container registry of a private organisation (CI variable `ROM_PKG_OWNER`). This
 | image `/opt/qemu-eos` | `qemu-system-arm`, `qemu-img` (arm-softmmu, TCG plugins, VNC, no GUI); `plugins/libwakeups.so` (idle/IRQ counters, source in `src/plugins/`); upstream `libmagiclantern.so` (DryosDebugMsg); `QEMU_EOS_SHA` (source commit), `BUILD_PROFILE`; gcc, arm-none-eabi binutils, mtools, python3-pil |
 | `ci/qemu/make_sd_image.py` (+ `test_sd_image.sh`) | Raw SD image from `platform/sd.qcow2.xz` + an ML zip (qemu-img + mtools; no guestmount/FUSE) |
 | `ci/qemu/scenario.py` | Boots one scenario, takes screenshots, collects logs and plugin output |
+| `ci/qemu/shoot.py` (+ `card.py`) | Shooting scenarios: pictures taken by Canon and ML, read back from the card (see *Shooting scenarios*) |
 | `ci/qemu/run_cam.sh` (`run_eosm.sh`) | All scenarios for one camera (in parallel by default) + comparison table; `SKIPPED` without ROMs |
 | `ci/qemu/fetch_roms.sh`, `ci-emulation.sh`, `check_rom_md5.sh` | CI side of the ROM handling below |
 | `tools/upload_roms.sh` | Maintainer helper: upload a camera's ROMs to the private package |
@@ -78,6 +79,41 @@ Outputs per scenario in `emu-out/<CAM>/<scenario>/`: `wakeups.json`, `tasks.json
 
 What stays here uses this tree (platform dirs, stubs, `sd.qcow2.xz`, ML builds, ROM checksums); everything that
 only depends on QEMU is in QEMU-EOS-Optimized.
+
+## Shooting scenarios (photo capture)
+
+The pinned QEMU image emulates the shutter release on the 1100D and the 4000D (QEMU-EOS-Optimized
+`hw/eos/capture.c`, `docs/models/capture.md` there): a full shutter press or a remote release runs Canon's
+whole shooting sequence and the picture lands on the emulated card, with Canon's EXIF. `run_cam.sh` then runs
+`ci/qemu/shoot.py` for each scenario of the camera (`SHOOT=0` skips them; the camera specifics, readiness
+markers and scenario list, are in its `CAMERAS` table, one entry per camera):
+
+| Scenario | Trigger | Checked |
+|---|---|---|
+| `canon-shot` | Canon only: full press (left Ctrl) | 1 release, 1 picture with EXIF; what Canon captured (`iso:..,tv:..,av:..`) equals what the MPU reported |
+| `ml-ivl` | ML intervalometer from a config preset (5 s, 3 shots, started at boot) | 3 releases through ML's remote release (`PROP_REMOTE_SW2`), 3 pictures |
+| `ml-hdr` | ML HDR bracketing (3 frames, 2 EV) from 1/100 s, one press | Tv of the 3 releases = base, base -2 EV, base +2 EV (raw -16 / 0 / +16), 3 different EXIF exposure times |
+| `ml-bulb` | ML `bulb_take_pic` (intervalometer in BULB, 3 s) | 1 release in BULB (Tv 0x0C), bulb end sent, 1 picture |
+
+Per shot, the exposure ML asked for is visible three ways: the emulator's `[CAPTURE] shot n: tv=.. av=.. iso=..
+ae=.. mode=..` (the values the DIGIC last sent to the MPU), Canon's own `iso:..,tv:..,av:..` when it starts the
+capture, and the EXIF of the file (`card.py` reads the FAT card image after QEMU exits; `result.json` lists
+both, and the table goes into `comparison.md`). The scenarios are anchored to the guest (ready markers, then
+the "write done" lines of Canon's file writer); no monitor or no ready marker is an `INFRASTRUCTURE TIMEOUT`
+(exit 3, retried once), missing pictures once the guest runs are a failure. A starting shutter speed (`ml-hdr`,
+`ml-bulb`) is reported by the emulated MPU once the GUI is up, as if the dial had been turned, so Canon, ML and
+the MPU agree on it.
+
+What this proves: ML's shooting features drive Canon's real capture code end to end (release requests, the
+exposure values ML sets reach Canon's capture and the file, HDR steps, intervalometer count, bulb start/end,
+files written in order). What it does not: no image processing (the sensor data is a fixed dark pattern, the
+JPEG a uniform gray frame whose level follows the exposure, the CR2 raw data zeros), timing is not physical
+(exposure length = Canon's VD count at the emulator's period; a bulb's EXIF time is not the requested one;
+intervals are guest time on a loaded host), no metering (auto modes use what the MPU last reported), single
+frames only (no continuous drive, LiveView capture, flash, mirror lockup). On the 4000D, exposures over about a
+second take a long-exposure correction path that is not always completed, hence the 1/100 s HDR base. The
+bulb *timer* trigger (half-shutter held in BULB) is not exercised: it needs ML's display-idle state with the
+display on, which Canon turns off on half press.
 
 ## Metrics and their limits
 

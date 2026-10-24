@@ -19,6 +19,7 @@
 #   DISPLAY_OFF_S  after the window: display off (INFO/DISP) for this long, then wake it with the same key
 #                  (deep-sleep check, docs/analysis/powersave-hold.md; default 30 on the 1100D, else 0)
 #   OUT            output dir (default emu-out/CAM)
+#   SHOOT=0        skip the shooting scenarios (shoot.py: Canon shot, ML intervalometer, HDR, bulb)
 #   PARALLEL       1: scenarios at once; 0: one after the other; auto (default): at once only if the host
 #                  is not loaded (1-min load average + scenarios <= 1.5 x nproc)
 # A scenario that ends in an INFRASTRUCTURE TIMEOUT (scenario.py exit 3: the emulator never reached a
@@ -197,7 +198,36 @@ if [ "${#retry[@]}" -gt 0 ]; then
     echo "INFRASTRUCTURE TIMEOUT twice: ${retry[*]} -- no functional result for them"; rc=1
 fi
 
+# Shooting scenarios (ci/qemu/shoot.py; needs a qemu-eos image with photo capture emulation): pictures taken by
+# Canon and by ML (intervalometer, HDR bracketing, bulb), checked on the card. SHOOT=0 skips them. ML scenarios
+# use the photo build where there is one, else the full build. Results: $OUT/shoot-<scenario>/, $OUT/shooting.md.
+if [ "${SHOOT:-1}" = 1 ]; then
+    shoot_zip=${ML_ZIP_PHOTO:-${ML_ZIP_FULL:-}}
+    shoot=$(python3 -I "$HERE/shoot.py" --list "$CAM" ${shoot_zip:+--ml})
+    : > "$OUT/shooting.md"
+    for sc in $shoot; do
+        echo "== $CAM / shoot $sc"
+        for attempt in 1 2; do       # one more try, alone, after an infrastructure timeout
+            st=0
+            python3 -I "$HERE/shoot.py" --cam "$CAM" --scenario "$sc" --rom-dir "$ML_ROM_DIR" \
+                --base-sd "$ROOT/platform/sd.qcow2.xz" ${shoot_zip:+--zip "$shoot_zip"} \
+                ${debugmsg:+--debugmsg-addr "$debugmsg"} --out "$OUT/shoot-$sc" | tee "$work/shoot.txt" || st=$?
+            [ "$st" = 3 ] && [ "$attempt" = 1 ] && { echo "shoot $sc: INFRASTRUCTURE TIMEOUT, retrying"; continue; }
+            break
+        done
+        grep -v '^ *$' "$work/shoot.txt" | grep -v 'qemu-system-arm' >> "$OUT/shooting.md" || true
+        case $st in
+            0) ;;
+            3) echo "shoot $sc: INFRASTRUCTURE TIMEOUT twice -- no functional result"; rc=1 ;;
+            *) echo "shoot $sc FAILED"; rc=1 ;;
+        esac
+    done
+fi
+
 # With the display-off segment, compare.py also checks the deep-sleep expectations (DEEP_SLEEP_ASSERT=0: report only)
 [ "${DISPLAY_OFF_S%.*}" -gt 0 ] && export DEEP_SLEEP_ASSERT=${DEEP_SLEEP_ASSERT:-1}
 python3 -I "$HERE/compare.py" "$CAM" "$OUT" "${scenarios[@]}" | tee "$OUT/comparison.md" || rc=1
+if [ -s "$OUT/shooting.md" ]; then
+    { echo; echo "## Shooting (ci/qemu/shoot.py)"; echo '```'; cat "$OUT/shooting.md"; echo '```'; } | tee -a "$OUT/comparison.md"
+fi
 exit $rc
