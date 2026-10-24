@@ -38,15 +38,20 @@ The 1100D (DIGIC 4) is the maintainer's second body and validates the whole chai
 The 4000D (DIGIC 4+) is the port in progress (`PORT-4000D.md`): before its scenarios, `run_cam.sh` checks every
 stub against the ROM (`tools/check_stubs.py`, result in `stubs-check.txt`), and its `canon` scenario ends with a
 key probe (`scenario.py --probe-keys`, `PROBE_KEYS`): each emulated key is sent once, the GUI events Canon logs for
-it go to `keys.json` with a screenshot per key, which is how `gui.h` is checked.
+it go to `keys.json` with a screenshot per key, which is how `gui.h` is checked. Its ML scenarios also walk the ML
+menu (`scenario.py --menu-tour`, `MENU_TOUR`: the menu is reopened after the config check and `right` moves to the
+next tab, `menu_tourNN_right.png`; every key must change the screen, then MENU closes it and the holds must be back
+to 0), and the photo scenarios switch modules on (`PHOTO_MODULES`: an empty `ML/SETTINGS/<NAME>.EN` per module, so
+ML loads it at boot; default `file_man img_name lua`, `sd_clock` stays off).
 
 | Scenario | Card | Camera bootflag | Meaning |
 |---|---|---|---|
 | `canon` | base image, no ML | off (`firmware=boot=0`) | Canon firmware idle baseline |
 | `ml-full` | `ML_PROFILE=full` zip (1100D: the only build) | on | upstream-equivalent ML |
-| `ml-photo` | `ML_PROFILE=photo` zip (EOSM only) | on | Penumbra's photo build |
+| `ml-photo` | `ML_PROFILE=photo` zip (EOSM, 4000D) | on | Penumbra's photo build (counted powersave holds) |
 | `ml-hold` | `make POWERSAVE_HOLD=y` zip (1100D) | on | `ml-full` with counted powersave holds (`analysis/powersave-hold.md`) |
 | `ml-hold-ivl` | `ml-hold` zip + config preset `ML/SETTINGS/MAGIC.CFG` (1100D) | on | intervalometer auto-started at boot (first shot after 15 min): an active hold |
+| `ml-photo-ivl` | `ml-photo` zip + the same preset (4000D, `IVL_PHOTO=1`) | on | the photo build's intervalometer: its hold must be taken and held |
 
 Timeline per scenario (host time): boot `WARMUP_S` (40 s, not measured) → screenshot `boot.png` →
 measure `MEASURE_S` (30 s) → screenshot `idle.png` → `quit`.
@@ -55,7 +60,7 @@ Deep sleep (1100D, `DISPLAY_OFF_S`, default 30): after the window, INFO (`sendke
 `pmSelfRefresh : In/Out`, the emulator's `[PM1100D] self-refresh` lines (length of each sleep, wake interrupt),
 the plugin's halted time and rates, task switches and the counter samples.
 For ML scenarios, after that, the Trash key (`sendkey delete`) opens the ML menu → `menu.png`; MENU dismisses the
-beta warning, SET selects an entry and MENU twice closes the menu, so ML saves its config (`menu_closed.png`;
+beta warning (`menu_main.png`: the menu itself), SET selects an entry and MENU twice closes the menu, so ML saves its config (`menu_closed.png`;
 `run_cam.sh` copies the card's `ML/SETTINGS` listing and `MAGIC.CFG` into `sd_settings.txt`). `compare.py` prints
 the deep-sleep table and fails the job (`DEEP_SLEEP_ASSERT=1`) unless `canon` and `ml-hold` sleep, `ml-full` and
 `ml-hold-ivl` never do (Canon counter ≥ 1 in every sample), the screen changes on the wake key, the ML menu opens,
@@ -64,8 +69,10 @@ Wakeup metrics in the table are cut from the plugin's 1 s interval records for t
 `comparison.md` also reports, per scenario, Canon's last power-save counter (`[PM] … (Counter = n)`), ML's last hold
 total (`[PS] … -> n`) and the number of `pmSelfRefresh` messages.
 It also gives Canon's counter changes per second in the window (one `[PM]` line per change), the `[PM]` calls
-while the ML menu is open (`--menu-s`, 6 s) and, for the 1100D, samples of the counter in RAM (0x2B64) read
-through the monitor every ~0.5 s.
+while the ML menu is open (`--menu-s`, 6 s) and, for the 1100D and 4000D, samples of the counter in RAM (0x2B64,
+0x3164C; `docs/firmware/1100D-powersave.md`, `docs/firmware/4000D-consts.md`) read through the monitor every ~0.5 s.
+With no `[PM]` call in the window every sample must equal the last logged count, else the scenario fails (a wrong
+counter address shows up there).
 Outputs per scenario in `emu-out/<CAM>/<scenario>/`: `wakeups.json`, `tasks.json`, `result.json`, `qemu.log`
 (DryosDebugMsg + task switches), screenshots; `emu-out/<CAM>/comparison.md` holds the table.
 

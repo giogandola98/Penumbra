@@ -114,7 +114,8 @@ run_scenario() {   # $1 = scenario; disk images and console output are per scena
     case $sc in ml-full|ml-photo|ml-hold) [ -n "$MENU_TOUR" ] && extra+=(--menu-tour "$MENU_TOUR") ;; esac
     case $sc in ml-photo|ml-photo-ivl)
         : > "$work/module.en"
-        for m in $PHOTO_MODULES; do seeds+=(--put "ML/SETTINGS/$(echo "$m" | tr a-z A-Z).EN:$work/module.en"); done ;;
+        for m in $PHOTO_MODULES; do seeds+=(--put "ML/SETTINGS/$(echo "$m" | tr a-z A-Z).EN:$work/module.en"); done
+        [ -n "$PHOTO_MODULES" ] && extra+=(--expect-modules "$(echo $PHOTO_MODULES | tr ' ' ,)") ;;
     esac
     [ -n "$boot" ] && extra+=(--config-check)
     extra+=(${canon_ready[@]+"${canon_ready[@]}"})

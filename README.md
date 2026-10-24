@@ -41,7 +41,7 @@ redrawn when nothing has changed, and a permanent block on Canon's low-power idl
 | Canon 1100D | Used as the emulation test body: the whole chain runs there first |
 | Canon EOS M emulation | Waiting for a ROM dump. CI skips EOS M scenarios until one is available |
 | Real hardware | **Not tested** |
-| Canon 4000D port | In progress: 161 of 167 Canon stubs found and checked against the ROM; Magic Lantern boots and its menu opens in emulation ([docs/PORT-4000D.md](docs/PORT-4000D.md)) |
+| Canon 4000D port | In progress, emulation only: 161 of 167 Canon stubs found and checked against the ROM; photo build (intervalometer, bracketing, bulb timer, file manager, Lua, counted power-save holds) boots and its menus work in emulation; no LiveView yet ([docs/PORT-4000D.md](docs/PORT-4000D.md)) |
 
 Measured and estimated numbers so far are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#4-where-we-are).
 Penumbra makes no claims about battery life (percentages, shots per charge) until it has been measured on a

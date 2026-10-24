@@ -724,6 +724,8 @@ static void _module_load_all(uint32_t list_only)
 #endif
     {
         printf("  [E] failed to link modules\n");
+        /* also in Canon's debug log, where the emulation tests look for it (the console is not captured) */
+        DryosDebugMsg(0, 15, "[MODULE] link failed");
         for (uint32_t mod = 0; mod < module_cnt; mod++)
         {
             if(module_list[mod].enabled)
@@ -885,6 +887,7 @@ static void _module_load_all(uint32_t list_only)
             {
                 snprintf(module_list[mod].status, sizeof(module_list[mod].status), "OK");
                 snprintf(module_list[mod].long_status, sizeof(module_list[mod].long_status), "Module loaded successfully");
+                DryosDebugMsg(0, 15, "[MODULE] loaded %s", module_list[mod].name);
             }
         }
     }

@@ -55,6 +55,7 @@ void powersave_hold_init(void);             /* ML init, before the first hold   
 |---|---|---|---|
 | EOSM `ML_PROFILE=photo` (default) | on (`POWERSAVE_HOLD ?= y` in `platform/EOSM.202/Makefile`) | boot hold, released when init completes | forwarded to Canon |
 | EOSM `ML_PROFILE=full` | off | upstream permanent `DisablePowerSave` | counted only |
+| 4000D `ML_PROFILE=photo` (default) | on (`platform/4000D.110/Makefile`) | boot hold, released when init completes | forwarded to Canon |
 | any camera, e.g. 1100D | off by default; `make POWERSAVE_HOLD=y` turns it on | as above | as above |
 
 `platform/Makefile` adds `-DCONFIG_POWERSAVE_HOLD` when `POWERSAVE_HOLD=y`. Opt out of the photo default with
@@ -260,6 +261,21 @@ intervalometer at boot (first shot after 15 min, so no picture is taken): an act
   deferred completion), EOSM (no ROM in CI, and its PowerMgr is not reverse engineered). Whether slot 3 is really free
   at idle on the camera (the JPEG core boots normally there) is the assumption behind the emulator fix; the
   DryosDebugMsg log on hardware (`[CLKSAVER]` `LSEL_DISABLE` after display off, then `pmSelfRefresh : In`) confirms it.
+
+### QEMU results: 4000D photo profile (branch `port/4000d-2`, Forgejo CI run 65, 4000D.110)
+
+The 4000D has the same counter (`PowerMgr/PowerSaver.c`, RAM 0x3164C, `docs/firmware/4000D-consts.md`); its
+samples are now read through the monitor and must agree with Canon's `[PM]` log. Display on, no deep-sleep model:
+
+| Scenario | Canon counter (RAM samples in the window) | ML holds at window end / after the menu | WFI/s |
+|---|---|---|---:|
+| `ml-full` (permanent `DisablePowerSave`) | 1 (59 of 59) | 0 / 0 (counted only) | 106 |
+| `ml-photo` (holds forwarded) | 0 (59 of 59) | 0 / 0 | 212 |
+| `ml-photo-ivl` (intervalometer auto-started) | 1 (56 of 56) | 1 (`intervalometer`) / 1 | 106 |
+
+`ml-photo` idles in Canon's power-save mode as Canon alone does (mode 2: twice the WFI entries of mode 1 in this
+emulator), `ml-full` does not. Deep sleep is not modelled for the 4000D: it needs the clock-gate bit of `0xC0400008`
+and the self-refresh callback's hardware accesses in QEMU, as done for the 1100D.
 
 ## Follow-up: lens info poll outside LiveView (branch `power/lens-poll`)
 

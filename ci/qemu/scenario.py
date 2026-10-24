@@ -326,6 +326,9 @@ def main():
                     help="ML scenarios: comma-separated qemu-eos keys sent with the ML menu reopened after the "
                          "config check (e.g. right,right = next tabs); each must change the screen "
                          "(menu_tourNN_<key>.png), then MENU closes it")
+    ap.add_argument("--expect-modules", default="",
+                    help="ML scenarios: comma-separated modules that must load at boot ('[MODULE] loaded <name>' "
+                         "in the log, no '[MODULE] link failed')")
     ap.add_argument("--probe-keys", default="",
                     help="comma-separated qemu-eos keys sent at the end; logs the GUI events each one causes")
     ap.add_argument("--warmup", type=float, default=40)
@@ -703,6 +706,14 @@ def main():
             failed.append("ML holds at window end = %s, expected 0" % result["ml_holds_window_end"])
         if not a.active_hold and result["ml_holds_end"] != 0:
             failed.append("ML holds after the menu closed = %s, expected 0" % result["ml_holds_end"])
+        if a.expect_modules:
+            loaded = set(re.findall(r"\[MODULE\] loaded (\w+)", clean))
+            result["modules_loaded"] = sorted(loaded)
+            if "[MODULE] link failed" in clean:
+                failed.append("module link failed (a module imports a symbol this build does not export)")
+            missing = [m for m in a.expect_modules.split(",") if m and m not in loaded]
+            if missing:
+                failed.append("modules not loaded: %s" % ", ".join(missing))
         for t in result.get("menu_tour", []):
             if not t["changed"]:
                 failed.append("menu tour: screen unchanged after key %s (%s)" % (

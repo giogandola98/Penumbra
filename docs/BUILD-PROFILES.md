@@ -1,4 +1,4 @@
-# Build profiles (EOS M 2.0.2)
+# Build profiles (EOS M 2.0.2, 4000D 1.1.0)
 
 `platform/EOSM.202` can be built in two profiles, selected with `ML_PROFILE`:
 
@@ -48,3 +48,29 @@ used by `menu.c`/`bmp.c`, `is_mvr_buffer_almost_full` used by `zebra.c`. Droppin
 
 Trap focus stays disabled as in upstream EOSM (`#undef FEATURE_TRAP_FOCUS`). `silent` is kept (silent pictures are a
 photo feature); `lua` is shipped as an optional module.
+
+## 4000D 1.1.0
+
+`platform/4000D.110` has the same switch, but there is no upstream feature set for this camera, so the profiles
+start from the bring-up set (`features.h`: debug menus only, no LiveView, movie, raw, FPS or audio):
+
+| Profile | Command | Meaning |
+|---------|---------|---------|
+| `photo` (default) | `make` | Bring-up set + `features-photo.h`, `POWERSAVE_HOLD ?= y`, modules from `modules-photo.included` |
+| `full` | `make ML_PROFILE=full` | Bring-up set only: the comparison baseline in emulation (`ml-full`), permanent `DisablePowerSave` |
+
+Photo features are added one at a time, each built with `FATAL_WARNINGS=y` and booted in emulation
+(`docs/PORT-4000D.md`, step 5):
+
+| Feature | How | Emulation check |
+|---|---|---|
+| Intervalometer | `FEATURE_INTERVALOMETER` | Shoot tab entry (`menu_tour01_right.png`); `ml-photo-ivl`: auto-started by a config preset, its hold taken and held, Canon counter 1 in every sample |
+| HDR bracketing, bulb timer | `FEATURE_HDR_BRACKETING`, `FEATURE_BULB_TIMER`; Canon property writes on, limited to `property_whitelist.h` (`CONFIG_PROP_WRITE_WHITELIST`) | Shoot tab entries; no `PROP_LEN` asserts in the log. Not exercised (no picture taken in emulation) |
+| File manager, image names | modules `file_man`, `img_name` | loaded at boot (Modules tab: OK) |
+| SD clock | module `sd_clock`, shipped but off (no `.en` file) | listed as OFF |
+| Lua | module `lua` (optional) | loaded at boot |
+
+`CONFIG_PROP_WRITE_WHITELIST` (`src/property.c`) reuses the per-property write whitelist of the DIGIC 6/7/8 ports:
+`prop_request_change` only reaches Canon for the properties in the platform's `property_whitelist.h` (4000D:
+shutter, aperture, ISO, exposure compensation, drive mode, remote half/full shutter); every other write is
+dropped as if `CONFIG_PROP_REQUEST_CHANGE` were off.

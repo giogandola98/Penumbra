@@ -330,3 +330,12 @@ void update_state_fps() {
 #endif
 
 #endif
+
+#ifndef CONFIG_STATE_OBJECT_HOOKS
+/* Without the state object hooks there is no LiveView vsync counter (e.g. 4000D: LiveView not ported yet).
+ * Still defined, so modules that import it (Lua) link; returns 0, as when LiveView is closed or the wait times out. */
+int wait_lv_frames(int num_frames)
+{
+    return 0;
+}
+#endif
