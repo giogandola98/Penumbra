@@ -59,6 +59,9 @@ start from the bring-up set (`features.h`: debug menus only, no LiveView, movie,
 | `photo` (default) | `make` | Bring-up set + `features-photo.h`, `POWERSAVE_HOLD ?= y`, modules from `modules-photo.included` |
 | `full` | `make ML_PROFILE=full` | Bring-up set only: the comparison baseline in emulation (`ml-full`), permanent `DisablePowerSave` |
 
+Modules ship disabled (ML loads a module only with `ML/SETTINGS/<name>.en`); `tools/check_module_syms.py`
+(CI build job) checks that every shipped module links against the camera's `.sym`.
+
 Photo features are added one at a time, each built with `FATAL_WARNINGS=y` and booted in emulation
 (`docs/PORT-4000D.md`, step 5):
 
@@ -66,9 +69,9 @@ Photo features are added one at a time, each built with `FATAL_WARNINGS=y` and b
 |---|---|---|
 | Intervalometer | `FEATURE_INTERVALOMETER` | Shoot tab entry (`menu_tour01_right.png`); `ml-photo-ivl`: auto-started by a config preset, its hold taken and held, Canon counter 1 in every sample |
 | HDR bracketing, bulb timer | `FEATURE_HDR_BRACKETING`, `FEATURE_BULB_TIMER`; Canon property writes on, limited to `property_whitelist.h` (`CONFIG_PROP_WRITE_WHITELIST`) | Shoot tab entries; no `PROP_LEN` asserts in the log. Not exercised (no picture taken in emulation) |
-| File manager, image names | modules `file_man`, `img_name` | loaded at boot (Modules tab: OK) |
+| File manager, image names | modules `file_man`, `img_name` | loaded at boot (`[MODULE] loaded`, Modules tab: OK) |
 | SD clock | module `sd_clock`, shipped but off (no `.en` file) | listed as OFF |
-| Lua | module `lua` (optional) | loaded at boot |
+| Lua | module `lua` (optional) | loaded at boot (needs the `wait_lv_frames` fallback of `src/state-object.c`) |
 
 `CONFIG_PROP_WRITE_WHITELIST` (`src/property.c`) reuses the per-property write whitelist of the DIGIC 6/7/8 ports:
 `prop_request_change` only reaches Canon for the properties in the platform's `property_whitelist.h` (4000D:

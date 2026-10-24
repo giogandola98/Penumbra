@@ -16,7 +16,7 @@ work (forum threads, qemu-eos `2000d_test` branch) is checked first and reused o
 | 2 | done | 161 of 167 stubs located (152 high, 9 medium confidence), 6 audio/PTP ones missing and not needed by the minimal build; table and method in `firmware/4000D-stubs.md`; `tools/check_stubs.py` re-checks every stub against the ROM in the emulation job |
 | 3 | merged into 4 | the normal build is used directly (QEMU scenario `ml-full`) instead of a separate hello-world target |
 | 4 | boots in QEMU | `platform/4000D.110` builds with `FATAL_WARNINGS=y` (CI build job). CI run 56 (emulation job): stub check 161/161 OK; `ml-full` and `ml-hold` boot ML (ml_init, menu_task, shoot_task ... in the task log; `[PS] hold boot`, `hold menu` / `release menu` when Delete opens and MENU closes the ML menu); no QEMU errors. Screenshots reviewed (below) |
-| 5 | in progress | photo profile (default build, `docs/BUILD-PROFILES.md`): intervalometer, HDR bracketing, bulb timer, modules file_man / img_name / Lua (sd_clock shipped, off), `POWERSAVE_HOLD` on. Each step green in CI emulation (runs 63-66); see *Photo profile* below |
+| 5 | in progress | photo profile (default build, `docs/BUILD-PROFILES.md`): intervalometer, HDR bracketing, bulb timer, modules file_man / img_name / Lua (sd_clock shipped, off), `POWERSAVE_HOLD` on. Each step green in CI emulation (runs 63-67); see *Photo profile* below |
 | 6-7 | not started | |
 
 Platform facts used by step 4 (evidence in `firmware/4000D-stubs.md`): main firmware `0xFE0C0000`, kernel copied
@@ -42,7 +42,7 @@ Idle in emulation (relative only): canon 213 WFI/s, 86 task switches/s; ml-full 
 1), 254-260 switches/s (`audio_common_task` ~50/s although audio is off); ml-photo (run 64) 212 WFI/s as Canon
 alone, 141 switches/s (the photo profile does not start the audio task).
 
-### Screenshots (emulation, CI runs 61-65)
+### Screenshots (emulation, CI runs 61-67)
 - Canon GUI (`canon/boot.png`): the shooting screen at 720x480 (M, 0"3, F25, ISO AUTO, AWB, one-shot, evaluative
   metering, L quality, 35 shots, battery full), Italian UI from the ROM settings. MENU opens the last tab
   (Wi-Fi ... "Versione Firmware 1.1.0"), Q the quick-control screen, PLAY "Nessuna immagine", INFO turns the display
@@ -52,7 +52,7 @@ alone, 141 switches/s (the photo profile does not start the audio task).
   and the menu shows (`menu_main.png`, Help tab, version / commit / build lines at the bottom). The tab walk shows
   Shoot (Advanced Bracket, Intervalometer, Bulb Timer greyed outside bulb mode, Shoot Preferences), Focus (DOF
   settings, lens "EF-S18-55mm f/3.5-5.6 IS" read from the emulated lens), Prefs, Modules (file_man OK, img_name
-  OK, sd_clock OFF), Debug, Help. Fonts, colours and layout are those of a 720x480 DIGIC 4 camera; nothing is cut
+  OK, lua OK, sd_clock OFF), Scripts, Debug, Help. Fonts, colours and layout are those of a 720x480 DIGIC 4 camera; nothing is cut
   off or shifted. `menu_set.png` is ML's "Help files not found" page: the test card carries no help files.
 
 ### Photo profile
@@ -60,7 +60,7 @@ alone, 141 switches/s (the photo profile does not start the audio task).
 |---|---|
 | Intervalometer | Shoot tab entry; `ml-photo-ivl` starts it from a config preset: `[PS] hold intervalometer`, Canon counter 1 in all samples, ML holds 1 |
 | HDR bracketing, bulb timer | Shoot tab entries, no `PROP_LEN` asserts. Property writes are limited to `property_whitelist.h` (shutter, aperture, ISO, exposure compensation, drive, remote SW1/SW2): `_prop_request_change` (0xFE104D60) is PropertyMgr's request-change entry. Not exercised: no picture is taken in emulation |
-| file_man, img_name, Lua | loaded at boot (Modules tab: OK) |
+| file_man, img_name, Lua | loaded at boot: `[MODULE] loaded <name>` required by the scenario (`--expect-modules`), Modules tab shows OK, Lua adds its Scripts tab. The build job checks every shipped module's imports against `t100_110.sym` (`tools/check_module_syms.py`): Lua needed `wait_lv_frames`, which only existed with the state object hooks, and its failed link had made every module show "Err" |
 | sd_clock | shipped, off by default |
 | Power save | photo build idles at Canon counter 0 (RAM 0x3164C, all samples), ML holds 0 at idle and after the menu; `ml-full` keeps the counter at 1 |
 
