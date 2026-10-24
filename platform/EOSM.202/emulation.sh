@@ -2,9 +2,11 @@
 # "Adding a camera"). Every value is VAR=${VAR:-default}, so an environment variable still overrides it.
 # QEMU side of the same camera: QEMU-EOS-Optimized hw/eos/cams/EOSM/.
 
-# No Canon power-save counter address known and no deep sleep modelled by qemu-eos: no counter sampling,
-# no display-off segment.
-PM_COUNTER_ADDR=${PM_COUNTER_ADDR-}
+# Canon's power-save counter in RAM, sampled during the window: state block 0x3EE58, counter at 0x3EE5C
+# (DisablePowerSave 0xFF137DDC / EnablePowerSave 0xFF137E48; canon-firmware-re notes, QEMU-EOS-Optimized
+# docs/models/EOSM.md). No deep sleep is modelled by qemu-eos for this camera (the counter stays >= 1 in
+# LiveView), so no display-off segment.
+PM_COUNTER_ADDR=${PM_COUNTER_ADDR:-0x3EE5C}
 DISPLAY_OFF_S=${DISPLAY_OFF_S:-0}
 
 # Guest ready for the canon scenario: Canon's start-up task is done. The camera starts in LiveView with a muted
