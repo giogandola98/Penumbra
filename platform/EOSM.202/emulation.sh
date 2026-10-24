@@ -7,8 +7,10 @@
 PM_COUNTER_ADDR=${PM_COUNTER_ADDR-}
 DISPLAY_OFF_S=${DISPLAY_OFF_S:-0}
 
-# Guest ready for the canon scenario: none (the window is timed from launch).
-CANON_READY=${CANON_READY-}
+# Guest ready for the canon scenario: Canon's start-up task is done. The camera starts in LiveView with a muted
+# grey screen (no sensor frames), so the display says nothing; this line (QEMU-EOS-Optimized docs/models/EOSM.md)
+# does. Canon's power-save counter never reaches 0 here: no deep sleep to check.
+CANON_READY=${CANON_READY:-startupInitializeComplete}
 
 # Shooting scenarios: the pinned QEMU image has no photo capture emulation for this camera.
 SHOOT_CANON_READY=${SHOOT_CANON_READY-}

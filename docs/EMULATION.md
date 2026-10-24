@@ -36,6 +36,9 @@ only accepts a digest, so a re-pushed tag can never change what we test with). P
 `CAM` selects the camera as qemu-eos names it; the ML platform is `platform/CAM.<fw>`
 (`EOSM` → `EOSM.202`, `1100D` → `1100D.105`, `4000D` → `4000D.110`). CI runs `EMU_CAMS="1100D EOSM 4000D"`.
 The 1100D (DIGIC 4) is the maintainer's second body and validates the whole chain before EOS M ROMs exist.
+The EOS M (DIGIC 5) boots Canon's GUI in qemu-eos (`hw/eos/cams/EOSM`) and runs the `canon`, `ml-full` and
+`ml-photo` scenarios; it starts in LiveView with a muted grey screen, so its ready marker is a log line
+(`startupInitializeComplete`), and it has no deep-sleep model and no capture emulation yet (no shooting scenarios).
 The 4000D (DIGIC 4+) is the port in progress (`PORT-4000D.md`): before its scenarios, `run_cam.sh` checks every
 stub against the ROM (`tools/check_stubs.py`, result in `stubs-check.txt`), and its `canon` scenario ends with a
 key probe (`scenario.py --probe-keys`, `PROBE_KEYS`): each emulated key is sent once, the GUI events Canon logs for

@@ -6,12 +6,10 @@
 #
 # Usage (from the job workspace): src-checkout/ci/qemu/ci-emulation.sh
 # Needs: QEMU_IMAGE, CI_IMAGE (image:tag, built from CI_CONTAINERFILE if missing), SANDBOX (podman flags),
-#        ROM_TOKEN and/or JOB_TOKEN. EMU_CAMS selects cameras (default "1100D 4000D").
-#        EOSM: its ROMs are provisioned, but the pinned qemu-eos image does not boot this model yet; add it back
-#        once the QEMU-EOS-Optimized EOSM profile (hw/eos/cams/EOSM) boots the Canon GUI.
+#        ROM_TOKEN and/or JOB_TOKEN. EMU_CAMS selects cameras (default "1100D EOSM 4000D").
 set -euo pipefail
 SRC=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-EMU_CAMS=${EMU_CAMS:-1100D 4000D}
+EMU_CAMS=${EMU_CAMS:-1100D EOSM 4000D}
 OUT=$SRC/emu-out
 mkdir -p "$OUT"
 
