@@ -62,7 +62,7 @@ CFLAGS += \
     -DVERSION=\"$(VERSION)\"
 
 BUILD_DATE = $(call eval_once,BUILD_DATE,$(shell LC_TIME=EN date +'%Y-%m-%d'))
-VERSION = $(BUILD_DATE).$(MODEL).$(FW_VERSION)
+VERSION = Penumbra-$(BUILD_DATE).$(MODEL).$(FW_VERSION)
 
 # Location of files to turn into zip:
 ZIP_DIR = build/zip
@@ -610,7 +610,7 @@ $(BUILD_DIR)/reboot.o: $(SRC_DIR)/reboot.c $(BUILD_DIR)/version.bin $(BUILD_DIR)
 $(BUILD_DIR)/version.bin: FORCE | $(BUILD_DIR)
 	@echo '' > $@.tmp
 	@echo '' >> $@.tmp
-	@echo 'Magic Lantern $(VERSION)' >> $@.tmp
+	@echo '$(VERSION) (based on Magic Lantern)' >> $@.tmp
 	@echo 'Camera   : $(MODEL)' >> $@.tmp
 	@echo 'Firmware : $(FW_VERSION)' >> $@.tmp
 	@printf 'Commit: ' >> $@.tmp

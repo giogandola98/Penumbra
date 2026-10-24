@@ -48,7 +48,7 @@ CFLAGS += \
     -DVERSION=\"$(VERSION)\"
 CFLAGS += $(CFLAGS_PLATFORM)
 
-VERSION = $(call eval_once,VERSION,Nightly.$(shell LC_TIME=EN date +'%Y%b%d').$(MODEL)$(FW_VERSION))
+VERSION = $(call eval_once,VERSION,Penumbra.$(shell LC_TIME=EN date +'%Y%b%d').$(MODEL)$(FW_VERSION))
 
 
 ML_CAMS = \
@@ -369,7 +369,7 @@ $(BUILD_DIR)/reboot.o: $(SRC_DIR)/reboot.c $(BUILD_DIR)/version.bin $(BUILD_DIR)
 $(BUILD_DIR)/version.bin: FORCE | $(BUILD_DIR)
 	@echo '' > $@.tmp
 	@echo '' >> $@.tmp
-	@echo 'Magic Lantern $(VERSION)' >> $@.tmp
+	@echo '$(VERSION) (based on Magic Lantern)' >> $@.tmp
 	@echo 'Camera   : $(MODEL)' >> $@.tmp
 	@echo 'Firmware : $(FW_VERSION)' >> $@.tmp
 	@printf 'Commit: ' >> $@.tmp

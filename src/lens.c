@@ -1261,7 +1261,7 @@ mvr_create_logfile(
     mvr_logfile_buffer = fio_malloc(MVR_LOG_BUF_SIZE);
 
     snprintf( mvr_logfile_buffer, MVR_LOG_BUF_SIZE,
-        "# Magic Lantern %s\n\n",
+        "# %s (based on Magic Lantern)\n\n",
         build_version
     );
 

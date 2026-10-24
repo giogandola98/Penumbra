@@ -561,7 +561,7 @@ static void save_crash_log()
     {
         my_fprintf(f, "%s\n", get_assert_msg());
         my_fprintf(f,
-            "Magic Lantern version: %s\n"
+            "%s (based on Magic Lantern)\n"
             "Git commit: %s\n"
             "Built on %s by %s.\n",
             build_version,
@@ -1070,7 +1070,7 @@ static struct menu_entry debug_menus[] = {
     {
         .name = "Show tasks",
         .select = menu_open_submenu,
-        .help = "Displays the tasks started by Canon and Magic Lantern.",
+        .help = "Displays the tasks started by Canon and Penumbra.",
         .children =  (struct menu_entry[]) {
             {
                 .name = "Task list",
@@ -1779,7 +1779,7 @@ static void CopyMLFilesBack_AfterFormat()
         }
     }
 
-    HijackCurrentDialogBox(FORMAT_STR_LOC, "Magic Lantern restored :)");
+    HijackCurrentDialogBox(FORMAT_STR_LOC, "Penumbra restored :)");
     msleep(2000);
 }
 

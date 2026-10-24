@@ -2396,7 +2396,7 @@ static struct menu_entry selftest_menu[] =
     {
         .name       = "Self tests",
         .select     = menu_open_submenu,
-        .help       = "Tests to make sure Magic Lantern is stable and won't crash.",
+        .help       = "Tests to make sure Penumbra is stable and won't crash.",
         .submenu_width = 650,
         .children   = (struct menu_entry[]) {
             {

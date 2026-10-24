@@ -220,7 +220,7 @@ static void hook_on_canon_menu()
         {
             msleep(100);
             bmp_fill(COLOR_BLACK, 0, 0, 720, 480);
-            bmp_printf(FONT_LARGE, 0, 0, "Magic Lantern install");
+            bmp_printf(FONT_LARGE, 0, 0, "Penumbra install");
         }
     }
     else
@@ -323,7 +323,7 @@ static int install(void)
 {
     FH = fontspec_font(normal_font)->height;
     
-    bmp_printf(normal_font, 0, y, "Magic Lantern install");
+    bmp_printf(normal_font, 0, y, "Penumbra install");
     print_bootflags();
 
     if (!is_file("AUTOEXEC.BIN"))
@@ -414,7 +414,7 @@ static int install(void)
         }
 
         bmp_printf(FONT(FONT_MED, COLOR_YELLOW, COLOR_BLACK), 0, 480 - font_med.height, 
-            "To uninstall Magic Lantern, please wait for %d seconds.  ", i
+            "To uninstall Penumbra, please wait for %d seconds.  ", i
         );
         info_led_blink(1,50,950);
 
@@ -429,7 +429,7 @@ static int install(void)
 static int uninstall(void)
 {
     int y = 0;
-    bmp_printf(FONT_LARGE, 0, y, "Magic Lantern uninstall");
+    bmp_printf(FONT_LARGE, 0, y, "Penumbra uninstall");
     print_bootflags();
 
     if (boot_flags->firmware)

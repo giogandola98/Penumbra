@@ -41,11 +41,11 @@ draw_beta_warning()
 {
     bmp_fill(COLOR_BLACK, 0, 0, 720, 480);
 
-    bmp_printf(FONT_CANON, 242, 53, "Magic Lantern");
+    bmp_printf(FONT_CANON, 242, 53, "Penumbra");
 
     bmp_printf(FONT_MED | FONT_ALIGN_CENTER, 360, 150, "This is a development snapshot for testing purposes.");
 
-    bmp_printf(FONT_MED | FONT_ALIGN_CENTER, 360, 200, "Please report all bugs at www.magiclantern.fm.");
+    bmp_printf(FONT_MED | FONT_ALIGN_CENTER, 360, 200, "Please report all bugs at github.com/giogandola98/Penumbra.");
 
     bmp_printf(FONT_MED | FONT_ALIGN_CENTER, 360, 250, "Be careful using it for production work.      ");
 
@@ -54,7 +54,7 @@ draw_beta_warning()
     bmp_printf(FONT_MED | FONT_ALIGN_CENTER, 360, 350, "(Press any camera button to enter ML settings)");
 
     big_bmp_printf(FONT_MED,  10,  410,
-        "Magic Lantern version: %s\n"
+        "%s (based on Magic Lantern)\n"
         "Git commit: %s\n"
         "Built on %s by %s.",
         build_version,
@@ -89,11 +89,11 @@ draw_help_not_installed_page()
 
     bmp_printf(FONT_CANON, 10, 20, "Help files not found");
     
-    bmp_printf(FONT_MED, 10, 150, "Magic Lantern help files could not be found.              ");
+    bmp_printf(FONT_MED, 10, 150, "Penumbra help files could not be found.                  ");
 
     bmp_printf(FONT_MED, 10, 200, "Make sure all ML files are installed to your card.        ");
 
-    bmp_printf(FONT_MED, 10, 250, "See http://wiki.magiclantern.fm/install for instructions. ");
+    bmp_printf(FONT_MED, 10, 250, "See https://github.com/giogandola98/Penumbra for instructions.");
 }
 
 void menu_help_show_page(int page)

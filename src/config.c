@@ -193,7 +193,7 @@ int config_save_file(const char *filename)
     msg[0] = '\0';
   
     snprintf( msg, MAX_SIZE,
-        "# Magic Lantern %s (%s)\n"
+        "# %s, based on Magic Lantern (%s)\n"
         "# Built on %s by %s\n",
         build_version,
         build_id,

@@ -8,7 +8,7 @@ extern void menu_easy_advanced_display(void* priv, int x0, int y0, int selected)
 
 static void menu_nav_help_open(void* priv, int delta)
 {
-    menu_help_go_to_label("Magic Lantern menu", 0);
+    menu_help_go_to_label("Penumbra menu", 0);
 }
 
 static MENU_UPDATE_FUNC(user_guide_display)
@@ -154,7 +154,7 @@ static struct menu_entry help_menus[] = {
 #if 0 // disable menu that always says there's no help files
       // FIXME: turn this into a generic about ML page
     {
-        .name = "About Magic Lantern",
+        .name = "About Penumbra",
         .select = menu_help_go_to_label,
     },
 #endif

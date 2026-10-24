@@ -176,7 +176,7 @@ static void fail()
     disp_init();
 
 #ifdef CONFIG_INSTALLER
-    print_line(COLOR_WHITE_DD, 4, "Magic Lantern");
+    print_line(COLOR_WHITE_DD, 4, "Penumbra");
     print_line(COLOR_WHITE_DD, 2, "");
     print_line(COLOR_WHITE_DD, 2, "");
     print_line(COLOR_WHITE_DD, 2, "Incorrect firmware version.");
@@ -204,7 +204,7 @@ static void fail()
     print_line(COLOR_WHITE_DD, 2, "");
     print_line(COLOR_GRAY_DD+2, 2, "You may now remove your battery.");
 #else
-    print_line(COLOR_WHITE_DD, 4, "Magic Lantern");
+    print_line(COLOR_WHITE_DD, 4, "Penumbra");
     print_line(COLOR_WHITE_DD, 2, VERSION);
     print_line(COLOR_WHITE_DD, 2, "");
     print_line(COLOR_WHITE_DD, 2, "");
@@ -232,7 +232,7 @@ static void fail()
     upgrade_line[len-10] = fw_version[2];
     print_line(COLOR_GRAY_DD+2, 2, upgrade_line);
     print_line(COLOR_GRAY_DD+2, 2, "");
-    print_line(COLOR_GRAY_DD+2, 2, "- To use your camera without Magic Lantern,");
+    print_line(COLOR_GRAY_DD+2, 2, "- To use your camera without Penumbra,");
     print_line(COLOR_GRAY_DD+2, 2, "  format this card from your computer.");
     print_line(COLOR_WHITE_DD, 2, "");
     print_line(COLOR_GRAY_DD+2, 2, "You may now remove your battery.");

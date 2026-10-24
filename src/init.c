@@ -432,13 +432,14 @@ static void my_big_init_task()
         /* fixme: enable on all models */
         extern char additional_version[];
         additional_version[0] = '-';
-        additional_version[1] = 'm';
-        additional_version[2] = 'l';
-        additional_version[3] = '-';
-        additional_version[4] = 'o';
-        additional_version[5] = 'f';
+        additional_version[1] = 'p';
+        additional_version[2] = 'e';
+        additional_version[3] = 'n';
+        additional_version[4] = '-';
+        additional_version[5] = 'o';
         additional_version[6] = 'f';
-        additional_version[7] = '\0';
+        additional_version[7] = 'f';
+        additional_version[8] = '\0';
     #endif
 
         /* some very basic feedback - fade out the SD led */
@@ -665,7 +666,7 @@ void boot_post_init_task(void)
     *(void**)(DRYOS_ASSERT_HANDLER) = (void*)my_assert_handler;
 #endif // (CONFIG_CRASH_LOG)
 
-    DebugMsg( DM_MAGIC, 3, "Magic Lantern %s (%s)",
+    DebugMsg( DM_MAGIC, 3, "%s, based on Magic Lantern (%s)",
         build_version,
         build_id
     );
@@ -682,19 +683,12 @@ void boot_post_init_task(void)
     // Don't use strcpy() so that this can be done
     // before strcpy() or memcpy() are located.
     extern char additional_version[];
-    additional_version[0] = '-';
-    additional_version[1] = 'm';
-    additional_version[2] = 'l';
-    additional_version[3] = '-';
-    additional_version[4] = build_version[0];
-    additional_version[5] = build_version[1];
-    additional_version[6] = build_version[2];
-    additional_version[7] = build_version[3];
-    additional_version[8] = build_version[4];
-    additional_version[9] = build_version[5];
-    additional_version[10] = build_version[6];
-    additional_version[11] = build_version[7];
-    additional_version[12] = build_version[8];
+    // build_version starts with "Penumbra-": skip that prefix
+    const char * pre = "-pen-";
+    for (int i = 0; i < 5; i++)
+        additional_version[i] = pre[i];
+    for (int i = 0; i < 8; i++)
+        additional_version[5 + i] = build_version[9 + i];
     additional_version[13] = '\0';
 #endif
 

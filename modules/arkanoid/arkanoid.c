@@ -167,7 +167,7 @@ static void arkanoid_draw_elem(element * e, int x, int y, int color)
             bfnt_draw_char(e->c1, x, y, color, NO_BG_ERASE);
             break;
         case ELEM_ML:
-            bmp_printf(FONT(FONT_LARGE, color, 0), 720 / 2 - 13 * font_large.width / 2, 480 / 2 - font_large.width / 2, "Magic Lantern");
+            bmp_printf(FONT(FONT_LARGE, color, 0), 720 / 2 - 13 * font_large.width / 2, 480 / 2 - font_large.width / 2, "Penumbra");
             break;
         case ELEM_PRESENT:
             bmp_printf(FONT(FONT_LARGE, color, 0), 720 / 2 - 7 * font_large.width / 2, 480 / 2 - font_large.width / 2, "present");
@@ -759,7 +759,7 @@ static struct menu_entry arkanoid_menu[] =
     {
         .name = "Arkanoid",
         .select = arkanoid_start,
-        .help = "Second game for Magic Lantern. Try it in LiveView.",
+        .help = "Second game for Penumbra. Try it in LiveView.",
         .children = (struct menu_entry[])
         {
             {
