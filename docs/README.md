@@ -20,6 +20,7 @@ Some documents currently live only on branches that are not merged yet. Read the
 | [analysis/power-audit.md](analysis/power-audit.md) | Audit of upstream ML on the EOS M: tasks and wakeup rates, power-save blockers, overlay hot paths, ranked fixes |
 | [analysis/overlay-kernels.md](analysis/overlay-kernels.md) | Zebra, peaking and histogram kernels: bit-exact equivalence tests and ARM926 instruction counts |
 | [firmware/1100D-powersave.md](firmware/1100D-powersave.md) | Canon 1100D `DisablePowerSave` / `EnablePowerSave`, the PowerMgr idle modes and self-refresh sleep (addresses and our own description) |
+| [firmware/4000D-powersave.md](firmware/4000D-powersave.md) | Canon 4000D PowerMgr idle loop and `selfRefresh` (WFI with IRQs masked): addresses, registers, differences from the 1100D |
 | [firmware/fir-update-file.md](firmware/fir-update-file.md) | Why the EOS M 2.0.2 update file cannot replace a ROM dump (encrypted payload) |
 | [firmware/rom-md5.txt](firmware/rom-md5.txt) | Checksums of the maintainer's ROM dumps, used by CI to verify downloads (the dumps themselves are never in the repository) |
 

@@ -58,7 +58,5 @@ exact field was not seen in use; **not verified** = still the 1300D value.
 | PowerMgr state | RAM 0x39650: +0 running, +4 param, +8 mode (1 = WFI at full clock, 2 = power save), +0xC "not in self-refresh", +0x10 self-refresh callback, +0x14 last-sleep stamp | `PowerMgr_task_entry` 0xFE289544, `PowerMgr_set_mode` 0xFE289684 (literal 0xFE2896D8) | verified |
 | Deep-sleep condition | mode 2, bit 1 of `0xC0400008` clear (image engine unclocked), more than 1000 ticks since the stamp: `[PM] pmSelfRefresh : In/Out` around the callback | same code shape as the 1100D | verified (static) |
 
-Deep sleep in QEMU is modelled for the 1100D only. For the 4000D the emulator would need the same pieces as the
-1100D model (QEMU-EOS-Optimized): the clock-gate register `0xC0400008` bit 1 and the self-refresh callback's
-hardware accesses (DRAM self-refresh entry, timers stopped until a wake interrupt), with the wake sources
-(MPU / key interrupt) routed as on the 1100D.
+Deep sleep is modelled in QEMU-EOS-Optimized for the 4000D too (clock gate in `hw/eos/cams/pm_4000d.c`);
+the 4000D's `selfRefresh` and its registers are in `4000D-powersave.md`.
