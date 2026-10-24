@@ -1,5 +1,5 @@
 # QEMU image used by the `emulation` job, pinned by digest: <name>@sha256:<digest>.
 # Built, self-tested and published by the QEMU-EOS-Optimized CI into the registry of the private org named by the
 # CI variable ROM_PKG_OWNER, on this CI server (see ci/qemu/pull-image.sh). Update: copy the digest printed by that
-# CI run's "Publish image" step. Source: QEMU-EOS-Optimized @ 9098560a9a (branch emu/shutter = main 36d51f361c + photo capture emulation; not merged yet)
-qemu-eos@sha256:fd13744a672f90d4436fdc943285251a6725e9ebbbe77b76260e811ee639a65d
+# CI run's "Publish image" step. Source: QEMU-EOS-Optimized @ f38f12f169 (branch emu/shutter = main 36d51f361c + photo capture emulation; not merged yet)
+qemu-eos@sha256:ecf2d41ef572c26dd86fdeaf9166483b1e4de49c152d3793bb27356632906218

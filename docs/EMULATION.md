@@ -92,7 +92,7 @@ markers and scenario list, are in its `CAMERAS` table, one entry per camera):
 |---|---|---|
 | `canon-shot` | Canon only: full press (left Ctrl) | 1 release, 1 picture with EXIF; what Canon captured (`iso:..,tv:..,av:..`) equals what the MPU reported |
 | `ml-ivl` | ML intervalometer from a config preset (5 s, 3 shots, started at boot) | 3 releases through ML's remote release (`PROP_REMOTE_SW2`), 3 pictures |
-| `ml-hdr` | ML HDR bracketing (3 frames, 2 EV) from 1/100 s, one press | Tv of the 3 releases = base, base -2 EV, base +2 EV (raw -16 / 0 / +16), 3 different EXIF exposure times |
+| `ml-hdr` | ML HDR bracketing (3 frames, 2 EV) from 1/100 s, one press | Tv of the 3 releases = base, base -2 EV, base +2 EV (raw -16 / 0 / +16) as reported by the MPU and captured by Canon; 1100D also 3 pictures with 3 different EXIF exposure times (4000D: releases only, see below) |
 | `ml-bulb` | ML `bulb_take_pic` (intervalometer in BULB, 3 s) | 1 release in BULB (Tv 0x0C), bulb end sent, 1 picture |
 
 Per shot, the exposure ML asked for is visible three ways: the emulator's `[CAPTURE] shot n: tv=.. av=.. iso=..
@@ -111,7 +111,9 @@ JPEG a uniform gray frame whose level follows the exposure, the CR2 raw data zer
 (exposure length = Canon's VD count at the emulator's period; a bulb's EXIF time is not the requested one;
 intervals are guest time on a loaded host), no metering (auto modes use what the MPU last reported), single
 frames only (no continuous drive, LiveView capture, flash, mirror lockup). On the 4000D, exposures over about a
-second take a long-exposure correction path that is not always completed, hence the 1/100 s HDR base. The
+second take a long-exposure correction path that is not always completed, hence the 1/100 s HDR base, and
+developing back-to-back frames to files stalls in about one run in three (emulated engine, not ML), so its
+`ml-hdr` checks the releases and Canon's captures but not the files (`CAMERAS["4000D"]["no_files"]`). The
 bulb *timer* trigger (half-shutter held in BULB) is not exercised: it needs ML's display-idle state with the
 display on, which Canon turns off on half press.
 
