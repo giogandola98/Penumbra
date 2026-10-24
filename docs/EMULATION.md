@@ -80,13 +80,34 @@ Outputs per scenario in `emu-out/<CAM>/<scenario>/`: `wakeups.json`, `tasks.json
 What stays here uses this tree (platform dirs, stubs, `sd.qcow2.xz`, ML builds, ROM checksums); everything that
 only depends on QEMU is in QEMU-EOS-Optimized.
 
+## Adding a camera
+
+Everything that differs per camera is in two places, so that `run_cam.sh`, `shoot.py` and `compare.py` hold no
+`case "$CAM"` logic:
+
+1. **`platform/<CAM>.<fw>/emulation.sh`** in this repo (shell, sourced by `run_cam.sh` after it finds the platform
+   dir; every value is `VAR=${VAR:-default}` so an environment variable still overrides it; comment each value with
+   its evidence, e.g. `docs/firmware/1100D-powersave.md`). Copy `platform/1100D.105/emulation.sh` and set:
+   - `PM_COUNTER_ADDR`: RAM address of Canon's power-save counter (empty: not sampled);
+   - `DISPLAY_OFF_S`: length of the display-off (deep-sleep check) segment, 0 for none; with it `ml-hold-ivl` runs;
+   - `CANON_READY`: DryosDebugMsg marker that times the `canon` window (empty: from launch);
+   - `SHOOT_SCENARIOS`, `SHOOT_CANON_READY`, `SHOOT_SHUTTER_KEY`, `SHOOT_NO_FILES`: the shooting scenarios of the
+     camera (empty: none), their ready marker, the qemu-eos key of a full press, scenarios checked without files;
+   - `IVL_PHOTO` (1: `ml-photo-ivl`), `PROBE_KEYS`, `MENU_TOUR`, `PHOTO_MODULES`: port bring-up options;
+   - `EXPECT_SLEEP`: deep-sleep expectations that differ from the generic ones in `compare.py` (`ml-photo=1`).
+   A platform without the file runs with the generic defaults of `run_cam.sh`.
+2. **The QEMU side** lives in QEMU-EOS-Optimized, not here: the machine profile in `hw/eos/cams/<CAM>/` and its
+   description in `docs/models/PROFILES.md` there. A camera needs both before CI can emulate it; then add it to
+   `EMU_CAMS` (default in `ci/qemu/ci-emulation.sh`), upload its ROMs and checksums (see *ROM handling*) and bump the image
+   pin in `ci/qemu-image.txt` if the QEMU side changed.
+
 ## Shooting scenarios (photo capture)
 
 The pinned QEMU image emulates the shutter release on the 1100D and the 4000D (QEMU-EOS-Optimized
 `hw/eos/capture.c`, `docs/models/capture.md` there): a full shutter press or a remote release runs Canon's
 whole shooting sequence and the picture lands on the emulated card, with Canon's EXIF. `run_cam.sh` then runs
 `ci/qemu/shoot.py` for each scenario of the camera (`SHOOT=0` skips them; the camera specifics, readiness
-markers and scenario list, are in its `CAMERAS` table, one entry per camera):
+marker, shutter key and scenario list, are `SHOOT_*` values in the platform's `emulation.sh`, see *Adding a camera*):
 
 | Scenario | Trigger | Checked |
 |---|---|---|
@@ -113,7 +134,7 @@ intervals are guest time on a loaded host), no metering (auto modes use what the
 frames only (no continuous drive, LiveView capture, flash, mirror lockup). On the 4000D, exposures over about a
 second take a long-exposure correction path that is not always completed, hence the 1/100 s HDR base, and
 developing back-to-back frames to files stalls in about one run in three (emulated engine, not ML), so its
-`ml-hdr` checks the releases and Canon's captures but not the files (`CAMERAS["4000D"]["no_files"]`). The
+`ml-hdr` checks the releases and Canon's captures but not the files (`SHOOT_NO_FILES` in `platform/4000D.110/emulation.sh`). The
 bulb *timer* trigger (half-shutter held in BULB) is not exercised: it needs ML's display-idle state with the
 display on, which Canon turns off on half press.
 

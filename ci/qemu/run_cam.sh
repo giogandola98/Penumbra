@@ -17,7 +17,9 @@
 #   WARMUP_S, MEASURE_S         boot time excluded from, and length of, the measurement window (40, 30)
 #   TASKS=1        also count DryOS task switches with qemu-eos `-d tasks` (default 1)
 #   DISPLAY_OFF_S  after the window: display off (INFO/DISP) for this long, then wake it with the same key
-#                  (deep-sleep check, docs/analysis/powersave-hold.md; default 30 on the 1100D, else 0)
+#                  (deep-sleep check, docs/analysis/powersave-hold.md; default 30 on the 1100D and 4000D, else 0)
+#   Per-camera values (PM_COUNTER_ADDR, DISPLAY_OFF_S, CANON_READY, SHOOT_*, PROBE_KEYS, MENU_TOUR, IVL_PHOTO,
+#                  PHOTO_MODULES, EXPECT_SLEEP) come from platform/CAM.<fw>/emulation.sh; the environment overrides.
 #   OUT            output dir (default emu-out/CAM)
 #   SHOOT=0        skip the shooting scenarios (shoot.py: Canon shot, ML intervalometer, HDR, bulb)
 #   PARALLEL       1: scenarios at once; 0: one after the other; auto (default): at once only if the host
@@ -62,30 +64,27 @@ PLUGIN=${PLUGIN:-/opt/qemu-eos/plugins/libwakeups.so}
 debugmsg=$(sed -n 's/^NSTUB( *\(0x[0-9A-Fa-f]*\), *DryosDebugMsg).*/\1/p' "$PLAT/stubs.S" | head -1)
 echo "CAM=$CAM platform=${plats[0]} DryosDebugMsg=${debugmsg:-unknown} qemu-eos=$(cat /opt/qemu-eos/QEMU_EOS_SHA 2>/dev/null || echo ?)"
 
-# Canon's power-save counter in RAM (docs/firmware/1100D-powersave.md), sampled during the window.
-# Deep sleep (selfRefresh) is modelled by qemu-eos for the 1100D and the 4000D (docs/firmware/4000D-powersave.md).
-# 4000D: same PowerSaver struct (RAM 0x31648: +0 "PowerSaver" magic, +4 counter), docs/firmware/4000D-consts.md.
-case "$CAM" in
-    1100D) pmctr=0x2B64; DISPLAY_OFF_S=${DISPLAY_OFF_S:-30} ;;
-    4000D) pmctr=0x3164C; DISPLAY_OFF_S=${DISPLAY_OFF_S:-30} ;;
-    *)     pmctr=; DISPLAY_OFF_S=${DISPLAY_OFF_S:-0} ;;
-esac
+# Per-camera values (power-save counter, display-off segment, ready markers, shooting scenarios, port
+# bring-up options, ...) live in platform/CAM.<fw>/emulation.sh; see docs/EMULATION.md, "Adding a camera".
+# A platform without one runs with the generic defaults below. Environment variables override either.
+# shellcheck source=/dev/null
+[ -f "$PLAT/emulation.sh" ] && . "$PLAT/emulation.sh"
+PM_COUNTER_ADDR=${PM_COUNTER_ADDR-}      # RAM address of Canon's power-save counter (none: not sampled)
+DISPLAY_OFF_S=${DISPLAY_OFF_S:-0}        # display-off (deep-sleep check) segment length, 0 = none
+CANON_READY=${CANON_READY-}              # guest ready marker of the canon scenario, "" = timed from launch
 # Guest ready (scenario.py --ready-marker, DryosDebugMsg log): the window is timed from it, not from launch.
 # Canon: the display is on at the end of boot (1100D; other models: a stable screen). ML: its boot hold
 # is released (src/powersave.c), i.e. ML's init, ROM backup and module loading are over.
-canon_ready=(); case "$CAM" in 1100D) canon_ready=(--ready-marker 'TurnOnDisplay finish') ;; esac
+canon_ready=(); [ -n "$CANON_READY" ] && canon_ready=(--ready-marker "$CANON_READY")
 ml_ready=(--ready-marker '\[PS\] release boot ->')
-
-# Port bring-up: log the GUI events behind each emulated key in the canon scenario (scenario.py --probe-keys).
-case "$CAM" in 4000D) PROBE_KEYS=${PROBE_KEYS-m,m,delete,i,i,q,q,p,p,spc,a,up,down,left,right,z,x} ;; *) PROBE_KEYS=${PROBE_KEYS-} ;; esac
-# Port bring-up: walk the ML menu tabs (scenario.py --menu-tour; right = next tab, wraps around) in the ML scenarios.
-case "$CAM" in 4000D) MENU_TOUR=${MENU_TOUR-right,right,right,right,right,right,right} ;; *) MENU_TOUR=${MENU_TOUR-} ;; esac
-# Intervalometer auto-started by a config preset (an active hold, see ml-hold-ivl below): on the 1100D with the
-# display-off segment, on the 4000D in the photo build (ml-photo-ivl: no deep sleep while the hold is taken).
-case "$CAM" in 4000D) IVL_PHOTO=${IVL_PHOTO:-1} ;; *) IVL_PHOTO=${IVL_PHOTO:-0} ;; esac
-# Modules switched on (ML/SETTINGS/<name>.en) in the photo scenarios, so they are loaded at boot. ML ships modules
-# disabled; sd_clock (SD overclock) stays off on purpose.
-case "$CAM" in 4000D) PHOTO_MODULES=${PHOTO_MODULES-file_man img_name lua} ;; *) PHOTO_MODULES=${PHOTO_MODULES-} ;; esac
+PROBE_KEYS=${PROBE_KEYS-}                # port bring-up: keys probed in the canon scenario (--probe-keys)
+MENU_TOUR=${MENU_TOUR-}                  # port bring-up: ML menu tabs walked in the ML scenarios (--menu-tour)
+IVL_PHOTO=${IVL_PHOTO:-0}                # 1: ml-photo-ivl (intervalometer preset, photo build)
+PHOTO_MODULES=${PHOTO_MODULES-}          # modules switched on (ML/SETTINGS/<name>.en) in the photo scenarios
+# Shooting scenarios (shoot.py reads these from the environment) and the deep-sleep expectations that differ
+# from the generic ones in compare.py.
+export SHOOT_CANON_READY=${SHOOT_CANON_READY-} SHOOT_SHUTTER_KEY=${SHOOT_SHUTTER_KEY-}
+export SHOOT_SCENARIOS=${SHOOT_SCENARIOS-} SHOOT_NO_FILES=${SHOOT_NO_FILES-} EXPECT_SLEEP=${EXPECT_SLEEP-}
 
 # Stubs against their ROM evidence (tools/check_stubs.py; skipped for platforms without an evidence file).
 python3 -I "$ROOT/tools/check_stubs.py" "$PLAT" "$romdir/ROM1.BIN" | tee "$OUT/stubs-check.txt" || { echo "stub check FAILED"; exit 1; }
@@ -133,7 +132,7 @@ run_scenario() {   # $1 = scenario; disk images and console output are per scena
     python3 -I "$HERE/scenario.py" --cam "$CAM" --rom-dir "$ML_ROM_DIR" \
         --sd "$work/$sc-sd.img" --cf "$work/$sc-cf.img" $boot --plugin "$PLUGIN" \
         ${debugmsg:+--debugmsg-addr "$debugmsg"} $([ "$TASKS" = 1 ] && echo --tasks) \
-        ${pmctr:+--pm-counter-addr "$pmctr"} --display-off-s "$DISPLAY_OFF_S" "${extra[@]}" \
+        ${PM_COUNTER_ADDR:+--pm-counter-addr "$PM_COUNTER_ADDR"} --display-off-s "$DISPLAY_OFF_S" "${extra[@]}" \
         --warmup "$WARMUP_S" --measure "$MEASURE_S" --out "$OUT/$sc" || st=$?
     # ML's settings on the card after the run: did the config save after the deep sleep work?
     local off
@@ -203,7 +202,11 @@ fi
 # use the photo build where there is one, else the full build. Results: $OUT/shoot-<scenario>/, $OUT/shooting.md.
 if [ "${SHOOT:-1}" = 1 ]; then
     shoot_zip=${ML_ZIP_PHOTO:-${ML_ZIP_FULL:-}}
-    shoot=$(python3 -I "$HERE/shoot.py" --list "$CAM" ${shoot_zip:+--ml})
+    shoot=
+    for sc in $SHOOT_SCENARIOS; do     # ML scenarios (ml-*) need a build
+        case $sc in ml-*) [ -n "$shoot_zip" ] || continue ;; esac
+        shoot+="$sc "
+    done
     : > "$OUT/shooting.md"
     for sc in $shoot; do
         echo "== $CAM / shoot $sc"

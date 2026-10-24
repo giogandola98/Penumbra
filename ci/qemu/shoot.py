@@ -8,7 +8,7 @@ to the emulated SD card with Canon's EXIF. The emulator logs each release as
 asked for), Canon logs "iso:0x..,tv:0x..,av:0x.." when it starts the capture, and the EXIF of the file
 holds exposure time, aperture, ISO and exposure bias.
 
-Scenarios (generic; which ones run and the camera specifics are in CAMERAS below, one entry per camera):
+Scenarios (generic; which ones run and the camera specifics come from the environment, see camera() below):
   canon-shot   Canon firmware only: full shutter press (left Ctrl) -> one picture
   ml-ivl       ML intervalometer from a config preset: 3 shots, 5 s apart, started at boot
   ml-hdr       ML HDR bracketing (3 frames, 2 EV) from 1/100 s: one press, ML
@@ -19,14 +19,14 @@ Scenarios (generic; which ones run and the camera specifics are in CAMERAS below
 "tv": once the guest is ready the emulated MPU reports that shutter speed, as if the main dial had been turned
 (PROP_SHUTTER through qemu-eos' spell injection: QEMU_EOS_SPELLS_DIR + F5), so Canon, ML and the MPU agree on it.
 
-Timeline: QEMU starts -> monitor socket -> the guest is ready (CAMERAS ready markers in the DryosDebugMsg
+Timeline: QEMU starts -> monitor socket -> the guest is ready (the ready markers in the DryosDebugMsg
 log) -> trigger -> wait for the pictures ("write done" lines) -> quit -> the card is read (card.py).
 A step the emulator never reached because it did not come up (no monitor, no ready marker) is an
 INFRASTRUCTURE TIMEOUT (exit 3); pictures that do not come once the guest is running are a failure (exit 1).
 
 Usage: shoot.py --cam CAM --scenario NAME --rom-dir DIR --base-sd sd.qcow2.xz [--zip ML.zip]
                 --debugmsg-addr ADDR --out DIR
-       shoot.py --list CAM [--ml]        scenarios for a camera (with --ml: also the ML ones)
+Environment: SHOOT_CANON_READY, SHOOT_SHUTTER_KEY, SHOOT_NO_FILES (set by run_cam.sh from the platform's emulation.sh)
 """
 import argparse
 import json
@@ -44,26 +44,21 @@ from scenario import InfraTimeout, monitor_cmd, screenshot, EXIT_INFRA   # noqa:
 
 QEMU_EOS = os.environ.get("QEMU_EOS", "/opt/qemu-eos")
 
-# Per camera, in one place: readiness markers (DryosDebugMsg), the key of a full shutter press, and the
-# scenarios that run on it. ML scenarios need the build passed as --zip.
-CAMERAS = {
-    "1100D": {
-        "canon_ready": ["TurnOnDisplay finish"],
-        "ml_ready": [r"\[PS\] release boot ->"],
-        "shutter_key": "ctrl",
-        "scenarios": ["canon-shot", "ml-ivl", "ml-hdr", "ml-bulb"],
-    },
-    "4000D": {
-        "canon_ready": ["startupInitializeComplete"],
-        "ml_ready": [r"\[PS\] release boot ->"],
-        "shutter_key": "ctrl",
-        "scenarios": ["canon-shot", "ml-ivl", "ml-hdr", "ml-bulb"],
-        # back-to-back frames: the captures and their exposures are reliable, developing all of them
-        # to files is not (the emulated development of overlapping pictures stalls about one run in
-        # three), so only the releases are checked there
-        "no_files": ["ml-hdr"],
-    },
-}
+# Per camera: the data comes from the environment, set by run_cam.sh from platform/<CAM>.<fw>/emulation.sh
+# (the one source of truth per camera): SHOOT_CANON_READY (DryosDebugMsg marker of the canon scenarios),
+# SHOOT_SHUTTER_KEY (qemu-eos key of a full shutter press), SHOOT_NO_FILES (scenarios that check the releases
+# but not the picture files, space separated). The scenarios to run are chosen by run_cam.sh (SHOOT_SCENARIOS).
+# ML scenarios need the build passed as --zip. ML is ready when its boot hold is released (src/powersave.c).
+ML_READY = r"\[PS\] release boot ->"
+
+
+def camera():
+    canon_ready = os.environ.get("SHOOT_CANON_READY", "")
+    return {"canon_ready": [canon_ready] if canon_ready else [],
+            "ml_ready": [ML_READY],
+            "shutter_key": os.environ.get("SHOOT_SHUTTER_KEY", ""),
+            "no_files": os.environ.get("SHOOT_NO_FILES", "").split()}
+
 
 # Generic scenario definitions: ML config preset, trigger, pictures expected, emulator environment.
 SCENARIOS = {
@@ -165,8 +160,6 @@ def check(name, sc, text, pictures, cam_shots, files=True):
 
 def main():
     ap = argparse.ArgumentParser(usage=__doc__)
-    ap.add_argument("--list", metavar="CAM")
-    ap.add_argument("--ml", action="store_true", help="--list: include the ML scenarios")
     ap.add_argument("--cam")
     ap.add_argument("--scenario")
     ap.add_argument("--rom-dir")
@@ -181,11 +174,7 @@ def main():
                          "comes 15 s after ML's start)")
     a = ap.parse_args()
 
-    if a.list:
-        cam = CAMERAS.get(a.list, {"scenarios": []})
-        print(" ".join(s for s in cam["scenarios"] if a.ml or not SCENARIOS[s]["ml"]))
-        return
-    cam, sc = CAMERAS[a.cam], SCENARIOS[a.scenario]
+    cam, sc = camera(), SCENARIOS[a.scenario]
     if sc["ml"] and not a.zip:
         sys.exit("%s needs --zip" % a.scenario)
     os.makedirs(a.out, exist_ok=True)

@@ -44,10 +44,12 @@ def settings_saved(out, sc):
 
 # Expected deep-sleep behaviour per scenario: does Canon enter selfRefresh with the display off?
 # ml-photo: the photo profile forwards the counted holds (CONFIG_POWERSAVE_HOLD), like ml-hold; only checked where
-# the emulator models the deep sleep (EXPECT_SLEEP_CAM). *-ivl: an active intervalometer hold.
+# the emulator models the deep sleep (the camera's EXPECT_SLEEP, see below). *-ivl: an active intervalometer hold.
 EXPECT_SLEEP = {"canon": True, "ml-full": False, "ml-photo": None, "ml-hold": True, "ml-hold-ivl": False,
                 "ml-photo-ivl": False}
-EXPECT_SLEEP_CAM = {"4000D": {"ml-photo": True}}
+# Per camera overrides: the environment variable EXPECT_SLEEP="scenario=0|1 ..." that run_cam.sh sets from the
+# platform's emulation.sh (e.g. "ml-photo=1").
+EXPECT_SLEEP_CAM = {k: v == "1" for k, v in (kv.split("=", 1) for kv in os.environ.get("EXPECT_SLEEP", "").split())}
 
 
 def deep_sleep(out, rows, cam=""):
@@ -83,7 +85,7 @@ def deep_sleep(out, rows, cam=""):
             "yes" if d.get("screen_changed_on_wake") else "NO",
             ("yes" if d.get("menu_opened_after_wake") else "NO") if r.get("menu_png") else "-",
             {True: "yes", False: "NO", None: "-"}[saved]))
-        want = EXPECT_SLEEP_CAM.get(cam, {}).get(sc, EXPECT_SLEEP.get(sc))
+        want = EXPECT_SLEEP_CAM.get(sc, EXPECT_SLEEP.get(sc))
         slept = d["self_refresh_in"] > 0
         checks = []
         if want is not None:
