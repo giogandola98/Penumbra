@@ -43,10 +43,14 @@ def settings_saved(out, sc):
 
 
 # Expected deep-sleep behaviour per scenario: does Canon enter selfRefresh with the display off?
-EXPECT_SLEEP = {"canon": True, "ml-full": False, "ml-photo": None, "ml-hold": True, "ml-hold-ivl": False}
+# ml-photo: the photo profile forwards the counted holds (CONFIG_POWERSAVE_HOLD), like ml-hold; only checked where
+# the emulator models the deep sleep (EXPECT_SLEEP_CAM). *-ivl: an active intervalometer hold.
+EXPECT_SLEEP = {"canon": True, "ml-full": False, "ml-photo": None, "ml-hold": True, "ml-hold-ivl": False,
+                "ml-photo-ivl": False}
+EXPECT_SLEEP_CAM = {"4000D": {"ml-photo": True}}
 
 
-def deep_sleep(out, rows):
+def deep_sleep(out, rows, cam=""):
     """Table + checks for the display-off segment. Returns the list of failed checks."""
     infra = [sc for sc, r in rows if r and r.get("infra_error")]
     rows = [(sc, r) for sc, r in rows if r and r.get("display_off") and not r.get("infra_error")]
@@ -68,7 +72,7 @@ def deep_sleep(out, rows):
         saved = settings_saved(out, sc) if r.get("boot_ml") else None
         holds = "%s%s" % (r.get("ml_holds_window_end", "-"), (" (%s)" % "; ".join(
             l.split("[PS] ", 1)[-1] for l in r.get("ps_log", []) if "hold" in l and "boot" not in l))
-            if sc == "ml-hold-ivl" else "")
+            if sc.endswith("-ivl") else "")
         print("| %s | %d/%d | %d%s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
             sc, d["self_refresh_in"], (d.get("wake") or {}).get("self_refresh_out", 0), d["qemu_self_refresh"],
             " (+1 at end)" if d.get("self_refresh_in_progress") else "",
@@ -79,7 +83,7 @@ def deep_sleep(out, rows):
             "yes" if d.get("screen_changed_on_wake") else "NO",
             ("yes" if d.get("menu_opened_after_wake") else "NO") if r.get("menu_png") else "-",
             {True: "yes", False: "NO", None: "-"}[saved]))
-        want = EXPECT_SLEEP.get(sc)
+        want = EXPECT_SLEEP_CAM.get(cam, {}).get(sc, EXPECT_SLEEP.get(sc))
         slept = d["self_refresh_in"] > 0
         checks = []
         if want is not None:
@@ -99,7 +103,7 @@ def deep_sleep(out, rows):
             checks.append(("card writes after the wake: fio holds pair (%d/%d)" % (
                 fw.get("holds", 0), fw.get("releases", 0)),
                 fw.get("holds", 0) > 0 and fw.get("holds") == fw.get("releases")))
-        if sc == "ml-hold-ivl":
+        if sc.endswith("-ivl"):
             checks.append(("intervalometer hold taken", any("intervalometer" in l for l in r.get("ps_log", []))))
             tasks = d.get("tasks") or {}
             checks.append(("ML tasks keep switching with the display off",
@@ -169,7 +173,7 @@ def main():
                 print("    context of DisablePowerSave #%d in the window:" % (n + 1))
                 for l in block:
                     print("      %s" % l)
-    fails = deep_sleep(out, rows)
+    fails = deep_sleep(out, rows, cam)
     print("\nwakeups/s = WFI (idle entries) per second; busy ratio = 1 - halted/elapsed host time "
           "(TCG over-estimates it). See docs/EMULATION.md.")
     if missing:

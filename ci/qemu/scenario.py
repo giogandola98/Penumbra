@@ -245,7 +245,7 @@ def plugin_window(records, t0_ms, t1_ms):
 
 
 SR_RE = re.compile(r"pmSelfRefresh\s*:\s*(In|Out)")
-QSR_RE = re.compile(r"\[PM1100D\] self-refresh #(\d+) out after ([0-9.]+) s, wake irq (0x[0-9A-Fa-f]+)")
+QSR_RE = re.compile(r"\[PM\w+\] self-refresh #(\d+) out after ([0-9.]+) s, wake irq (0x[0-9A-Fa-f]+)")
 
 
 def pm_segment(text, seconds, tasks):
@@ -260,7 +260,7 @@ def pm_segment(text, seconds, tasks):
         "qemu_self_refresh": len(q), "qemu_self_refresh_s": round(sum(float(x[1]) for x in q), 3),
         "qemu_self_refresh_max_s": max([float(x[1]) for x in q] or [0]),
         "wake_irqs": sorted(set(x[2] for x in q)),
-        "self_refresh_in_progress": len(re.findall(r"\[PM1100D\] self-refresh #\d+ in", text)) > len(q),
+        "self_refresh_in_progress": len(re.findall(r"\[PM\w+\] self-refresh #\d+ in", text)) > len(q),
         "pm_calls": len(pm), "pm_counter_last": int(pm[-1]) if pm else None,
         "ps_log": [l.strip()[-80:] for l in text.splitlines() if "[PS] " in l][:10],
         "task_switches_per_s": round(sum(tasks.values()) / seconds, 2) if seconds else None,

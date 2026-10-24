@@ -62,11 +62,11 @@ debugmsg=$(sed -n 's/^NSTUB( *\(0x[0-9A-Fa-f]*\), *DryosDebugMsg).*/\1/p' "$PLAT
 echo "CAM=$CAM platform=${plats[0]} DryosDebugMsg=${debugmsg:-unknown} qemu-eos=$(cat /opt/qemu-eos/QEMU_EOS_SHA 2>/dev/null || echo ?)"
 
 # Canon's power-save counter in RAM (docs/firmware/1100D-powersave.md), sampled during the window.
-# Deep sleep (selfRefresh) is modelled by qemu-eos for the 1100D only.
-# 4000D: same PowerSaver struct (RAM 0x31648: +0 "PowerSaver" magic, +4 counter), docs/firmware/4000D-stubs.md.
+# Deep sleep (selfRefresh) is modelled by qemu-eos for the 1100D and the 4000D (docs/firmware/4000D-powersave.md).
+# 4000D: same PowerSaver struct (RAM 0x31648: +0 "PowerSaver" magic, +4 counter), docs/firmware/4000D-consts.md.
 case "$CAM" in
     1100D) pmctr=0x2B64; DISPLAY_OFF_S=${DISPLAY_OFF_S:-30} ;;
-    4000D) pmctr=0x3164C; DISPLAY_OFF_S=${DISPLAY_OFF_S:-0} ;;
+    4000D) pmctr=0x3164C; DISPLAY_OFF_S=${DISPLAY_OFF_S:-30} ;;
     *)     pmctr=; DISPLAY_OFF_S=${DISPLAY_OFF_S:-0} ;;
 esac
 # Guest ready (scenario.py --ready-marker, DryosDebugMsg log): the window is timed from it, not from launch.
@@ -80,7 +80,7 @@ case "$CAM" in 4000D) PROBE_KEYS=${PROBE_KEYS-m,m,delete,i,i,q,q,p,p,spc,a,up,do
 # Port bring-up: walk the ML menu tabs (scenario.py --menu-tour; right = next tab, wraps around) in the ML scenarios.
 case "$CAM" in 4000D) MENU_TOUR=${MENU_TOUR-right,right,right,right,right,right,right} ;; *) MENU_TOUR=${MENU_TOUR-} ;; esac
 # Intervalometer auto-started by a config preset (an active hold, see ml-hold-ivl below): on the 1100D with the
-# display-off segment, on the 4000D in the photo build (its intervalometer check; no deep-sleep model there).
+# display-off segment, on the 4000D in the photo build (ml-photo-ivl: no deep sleep while the hold is taken).
 case "$CAM" in 4000D) IVL_PHOTO=${IVL_PHOTO:-1} ;; *) IVL_PHOTO=${IVL_PHOTO:-0} ;; esac
 # Modules switched on (ML/SETTINGS/<name>.en) in the photo scenarios, so they are loaded at boot. ML ships modules
 # disabled; sd_clock (SD overclock) stays off on purpose.
