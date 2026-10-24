@@ -1,7 +1,7 @@
 # Counted powersave holds instead of ML's permanent `DisablePowerSave`
 
 Status: implemented, builds and host tests green; **verified in QEMU with the deep sleep modelled** (1100D, see
-*QEMU results: deep sleep*). Not yet run on hardware. Spec: `docs/firmware/1100D-powersave.md` (RE of 1100D 1.0.5). Branch `power/powersave-hold`.
+*QEMU results: deep sleep*; 4000D, see *QEMU results: 4000D deep sleep*). Not yet run on hardware. Spec: `docs/firmware/1100D-powersave.md` (RE of 1100D 1.0.5). Branch `power/powersave-hold`.
 
 ## Problem
 
@@ -274,8 +274,50 @@ samples are now read through the monitor and must agree with Canon's `[PM]` log.
 | `ml-photo-ivl` (intervalometer auto-started) | 1 (56 of 56) | 1 (`intervalometer`) / 1 | 106 |
 
 `ml-photo` idles in Canon's power-save mode as Canon alone does (mode 2: twice the WFI entries of mode 1 in this
-emulator), `ml-full` does not. Deep sleep is not modelled for the 4000D: it needs the clock-gate bit of `0xC0400008`
-and the self-refresh callback's hardware accesses in QEMU, as done for the 1100D.
+emulator), `ml-full` does not. The deep sleep was not modelled for the 4000D at the time; see the next section.
+
+### QEMU results: 4000D deep sleep (branch `power/4000d-deep-sleep`, Forgejo CI run 72, 4000D.110)
+
+**Emulator** (QEMU-EOS-Optimized branch `emu/4000d-pm`, CI run 46, image pinned in `ci/qemu-image.txt`): the
+4000D `selfRefresh` (`docs/firmware/4000D-powersave.md`) writes CLOCK_ENABLE = 0 and waits in a WFI with IRQs
+masked; it polls no wake flag. Everything else it polls was already answered by the emulator, so the model only adds
+the clock gate (`hw/eos/cams/pm_4000d.c`, selected per camera by the model's `pm_handler`): from that write until
+Canon's next non-zero write the DIGIC timers, the DryOS tick and the HPTimers stand still, and only a key/MPU
+interrupt ends the WFI. Before, the DryOS tick ended every sleep within 10 ms and PowerMgr re-entered `selfRefresh`
+about once a second (17 In/Out in 15 s). Each sleep is logged as `[PM4000D] self-refresh #n in` / `out after X s,
+wake irq 0xNN` (`scenario.py` now accepts any `[PM<cam>]` prefix).
+
+**Scenario**: as for the 1100D (`run_cam.sh`: `pmctr=0x3164C`, `DISPLAY_OFF_S=30` on the 4000D): after the 30 s
+window `sendkey i` (INFO: `PRESS_INFO_BUTTON` → `GUILock_TurnOffDisplay` → `TurnOffDisplay`, as on the 1100D) turns
+the display off for 30 s, then `sendkey i` wakes it; ML builds then open the ML menu, select an entry and close it
+(config save). `ml-photo` is the photo profile (`CONFIG_POWERSAVE_HOLD` on: the 4000D's counted-holds build, the
+1100D's `ml-hold`); `ml-photo-ivl` is it with the intervalometer auto-started (active hold). `compare.py` now expects
+the sleep in `ml-photo` on the 4000D (`EXPECT_SLEEP_CAM`) and none in `ml-photo-ivl` (every camera).
+
+| scenario | `pmSelfRefresh` In / Out | in self-refresh (of 30 s) | wake irq | IRQ/s | task sw/s | Canon counter (59 samples) | ML holds | wake: screen / ML menu / config saved, fio holds |
+|---|---:|---:|---|---:|---:|---|---|---|
+| canon | 1 / 1 | 29.3 s | 0x50 (MPU) | 5.6 | 20.8 | 0 | – | yes / – / – |
+| ml-full | 0 / 0 | 0 | – | 109.0 | 232.4 | 1 (pinned) | 0 | yes / yes / yes, 13/13 |
+| ml-photo | 1 / 1 | 29.3 s | 0x50 (MPU) | 5.5 | 23.0 | 0 | 0 | yes / yes / yes, 5/5 |
+| ml-photo-ivl | 0 / 0 | 0 | – | 109.1 | 118.9 | 1 | 1 (`intervalometer`) | yes / – / – |
+
+- Same picture as the 1100D: Canon alone and the counted-holds build enter `selfRefresh` once and sleep until the
+  key; the upstream-equivalent `ml-full` (permanent `DisablePowerSave`, counter 1 in every sample) and the active
+  intervalometer hold never do, and ML's tasks keep running there (`shoot_task`, `clock_task`, `cls_task`).
+- `ml-photo` wakes correctly: shooting screen back, ML menu opens, `MAGIC.CFG` written and intact, the 5 `fio`
+  holds of the writes after the wake all released, ML holds 0 afterwards. All 20 deep-sleep checks of the run pass.
+- The idle window (display on) is unchanged by the model: canon 213 WFI/s, `ml-photo` 213, `ml-full` and
+  `ml-photo-ivl` 107 (mode 1); the QEMU smoke test measures the same idle with the model on and off (217-219 WFI/s).
+- **Measurement caveat**: the deep-sleep rows for canon / `ml-photo` show ~13 000 "WFI/s". These are not wakeups:
+  during the ~1 s grace before the sleep (LCLK off, < 1000 ticks since the last stamp) Canon's PowerMgr busy-polls,
+  and each pass goes over the mode-1 WFI at 0xFE28957C, which is conditional (`mcreq`); the wakeups plugin counts
+  that instruction whether or not its condition holds. Halted time (29.3 s) and IRQ/s are the meaningful numbers
+  here. The 1100D's WFI is unconditional, so its rows do not show this.
+- **Not verified in emulation:** real time across the sleep (no RTC drift model), intervalometer shot timing (no
+  shutter emulation; the preset avoids shots), the LCD auto-off and APO paths, a sleep during an in-flight SD
+  transfer, and on the camera: whether ClockSaver really drops its last LCLK client after display off and
+  `0xC0F01004` reads 0x400 at idle (`[CLKSAVER]` log, then `pmSelfRefresh : In`). The JPEG-core ready value the
+  emulator returns (as for the 1300D) is what lets LCLK go off here.
 
 ## Follow-up: lens info poll outside LiveView (branch `power/lens-poll`)
 

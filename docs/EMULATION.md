@@ -55,15 +55,15 @@ ML loads it at boot; default `file_man img_name lua`, `sd_clock` stays off).
 
 Timeline per scenario (host time): boot `WARMUP_S` (40 s, not measured) → screenshot `boot.png` →
 measure `MEASURE_S` (30 s) → screenshot `idle.png` → `quit`.
-Deep sleep (1100D, `DISPLAY_OFF_S`, default 30): after the window, INFO (`sendkey i`) turns the display off for
+Deep sleep (1100D and 4000D, `DISPLAY_OFF_S`, default 30): after the window, INFO (`sendkey i`) turns the display off for
 `DISPLAY_OFF_S` → `display_off.png`, then INFO again wakes the camera → `woken.png`. The segment reports Canon's
-`pmSelfRefresh : In/Out`, the emulator's `[PM1100D] self-refresh` lines (length of each sleep, wake interrupt),
+`pmSelfRefresh : In/Out`, the emulator's `[PM1100D]` / `[PM4000D] self-refresh` lines (length of each sleep, wake interrupt),
 the plugin's halted time and rates, task switches and the counter samples.
 For ML scenarios, after that, the Trash key (`sendkey delete`) opens the ML menu → `menu.png`; MENU dismisses the
 beta warning (`menu_main.png`: the menu itself), SET selects an entry and MENU twice closes the menu, so ML saves its config (`menu_closed.png`;
 `run_cam.sh` copies the card's `ML/SETTINGS` listing and `MAGIC.CFG` into `sd_settings.txt`). `compare.py` prints
-the deep-sleep table and fails the job (`DEEP_SLEEP_ASSERT=1`) unless `canon` and `ml-hold` sleep, `ml-full` and
-`ml-hold-ivl` never do (Canon counter ≥ 1 in every sample), the screen changes on the wake key, the ML menu opens,
+the deep-sleep table and fails the job (`DEEP_SLEEP_ASSERT=1`) unless `canon` and `ml-hold` (4000D: `ml-photo`) sleep, `ml-full`
+and `ml-hold-ivl` / `ml-photo-ivl` never do (Canon counter ≥ 1 in every sample), the screen changes on the wake key, the ML menu opens,
 the config is written intact and its `fio` holds pair, and ML tasks keep running in `ml-hold-ivl`.
 Wakeup metrics in the table are cut from the plugin's 1 s interval records for the window only.
 `comparison.md` also reports, per scenario, Canon's last power-save counter (`[PM] … (Counter = n)`), ML's last hold
@@ -116,7 +116,7 @@ What works: Canon boot to the shooting screen (Q screen screenshot), ML 1100D.10
 first-run screen via the Trash key), DryosDebugMsg logging, task-switch logging, the plugin, ROM fetch + checks.
 
 What does not (qemu-eos limitations, not ML bugs):
-- **Fixed since (QEMU-EOS-Optimized `eos_pm_1100d`, `emu/deep-sleep`):** Canon idle now takes the low-clock WFI
+- **Fixed since (QEMU-EOS-Optimized `eos_pm_1100d`, `emu/deep-sleep`; 4000D: `hw/eos/cams/pm_4000d.c`, `emu/4000d-pm`):** Canon idle now takes the low-clock WFI
   with the display on and the `selfRefresh` deep sleep with the display off (`analysis/powersave-hold.md`, *QEMU
   results: deep sleep*). The note below describes the images before that model.
 - **Canon idle does not sleep in emulation (old images).** The DIGIC 4 idle loop (around 0xFF1EA7E0) only executes its WFI
