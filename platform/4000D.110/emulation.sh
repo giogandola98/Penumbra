@@ -15,13 +15,13 @@ DISPLAY_OFF_S=${DISPLAY_OFF_S:-30}
 CANON_READY=${CANON_READY-}
 
 # Shooting scenarios (shoot.py): ready marker of the canon scenarios, key of a full shutter press, scenarios
-# that run on this camera, and the ones whose picture files are not checked (releases only). ml-hdr: the
-# captures and their exposures are reliable, developing back-to-back pictures to files is not (the emulated
-# development of overlapping pictures stalls about one run in three), so only the releases are checked.
+# that run on this camera, and the ones whose picture files are not checked (releases only; none: since
+# qemu-eos orders the JPEG output completion by its input, back-to-back HDR frames are developed to files
+# like spaced shots).
 SHOOT_CANON_READY=${SHOOT_CANON_READY:-startupInitializeComplete}
 SHOOT_SHUTTER_KEY=${SHOOT_SHUTTER_KEY:-ctrl}
 SHOOT_SCENARIOS=${SHOOT_SCENARIOS:-canon-shot ml-ivl ml-hdr ml-bulb}
-SHOOT_NO_FILES=${SHOOT_NO_FILES-ml-hdr}
+SHOOT_NO_FILES=${SHOOT_NO_FILES-}
 
 # Intervalometer auto-started by a config preset in the photo build (ml-photo-ivl): no deep sleep while the
 # hold is taken.
