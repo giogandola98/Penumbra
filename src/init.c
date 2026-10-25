@@ -666,6 +666,12 @@ void boot_post_init_task(void)
     *(void**)(DRYOS_ASSERT_HANDLER) = (void*)my_assert_handler;
 #endif // (CONFIG_CRASH_LOG)
 
+#ifdef CONFIG_PROFILE_CAPTURE
+    /* read-only capture kit: DryosDebugMsg + MPU log from power-on (src/capture-kit.c) */
+    extern void capture_boot_start(void);
+    capture_boot_start();
+#endif
+
     DebugMsg( DM_MAGIC, 3, "%s, based on Magic Lantern (%s)",
         build_version,
         build_id

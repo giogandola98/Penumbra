@@ -1,3 +1,8 @@
+#ifdef CONFIG_PROFILE_CAPTURE
+/* Capture kit (ML_PROFILE=capture, docs/CAPTURE-KIT.md): its own, read-only feature set; nothing below applies */
+#include "features-capture.h"
+#else
+
 #include "all_features.h"
 /* Can't Be Implemented */
 #undef FEATURE_FORCE_LIVEVIEW // Already Live View
@@ -45,3 +50,5 @@
 #ifdef CONFIG_PROFILE_PHOTO
 #include "features-photo.h"
 #endif
+
+#endif /* CONFIG_PROFILE_CAPTURE */

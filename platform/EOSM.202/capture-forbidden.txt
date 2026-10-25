@@ -1,0 +1,297 @@
+# Forbidden Canon routines for the EOS M 2.0.2 capture kit (ML_PROFILE=capture), checked against the linked
+# binary by tools/check_capture_kit.py: no address below may appear as a word, a branch target or a symbol
+# value (ROM aliases 0xF8..0xFF included), and no eventproc name below may appear as a string (call() by name).
+# Format: <address> <name> [reason]. Addresses from stubs.S, the ROM's eventproc table and the disassembly.
+#
+# Stubs that are not assembled in this profile (stubs.S, WSTUB)
+0xFF11FB04 _prop_request_change  property write (settings are persistent)
+0xFF1200C0 prop_deliver          fake property change notification
+0xFF681ACC SetCFnData            custom function write
+0xFF2C1694 _EngDrvOut            image-engine register write
+0xFF2C19AC _engio_write          image-engine register write
+0xFF339490 _audio_ic_write       audio codec write
+0xFF1350F0 PowerAudioOutput      audio power
+0xFF134CE4 PowerMicAmp           audio power
+0xFF1330A0 SetAudioVolumeOut     audio codec
+0xFF2C0944 mvrFixQScale          movie encoder
+0xFF2C043C mvrSetDefQScale       movie encoder
+0xFF101E04 PD_RemoteRelease      shutter release
+0xFF2A3378 ptpPropSetUILock      UI lock property
+# Serial flash program / erase (internal routines; WREN 0x06 + PAGE PROGRAM 0x02, chip erase 0x60)
+0xFF139640 sf_program_internal   sends WREN 0x06 then PAGE PROGRAM 0x02 (0xFF139684, 0xFF13970C)
+0xFF13A554 sf_erase_internal     sends WREN 0x06 then erase (0xFF13A598, 0xFF13A61C)
+0xFF13A530 sf_allerase_cmd       chip erase 0x60 sequence (inside 0xFF13A518..0xFF13A544)
+# MPU: the kit only reads the rings; sending is forbidden
+0x0001DD2C mpu_send              MPU message (settings live in the MPU too)
+# Eventprocs (ROM eventproc table) that write settings, flash, boot flags, firmware or calibration
+0xFF0D2648 sht_FA_CreateTestImage eventproc
+0xFF0D27F8 sht_FA_DeleteTestImage eventproc
+0xFF0D254C sht_FA_ReleaseStart eventproc
+0xFF0D2570 sht_FA_ReleaseData eventproc
+0xFF0D2594 sht_FA_GetAdcData eventproc
+0xFF0D5FE4 unlockface eventproc
+0xFF0D609C resetafwide eventproc
+0xFF1DE214 FA_SetCalendar eventproc
+0xFF1DE1A4 FA_ResetCalendar eventproc
+0xFF1DEB78 FA_Release eventproc
+0xFF1DE9C0 FA_DeleteTestImage eventproc
+0xFF1DF0D8 FA_CaptureTestImage eventproc
+0xFF1DE434 FA_EnableAF eventproc
+0xFF1DE42C FA_DisableAF eventproc
+0xFF1DE564 FA_Reboot eventproc
+0xFF1E0108 FA_CopyVideoBoardInf eventproc
+0xFF1E0044 FA_CopyAVoltageBoardInf eventproc
+0xFF1E034C FA_CopySecurityBoardInf eventproc
+0xFF1E04B0 FA_CopyVistaUniqueID eventproc
+0xFF1E004C FA_ReadEepromData eventproc
+0xFF1E0098 FA_WriteEepromData eventproc
+0xFF1DF734 FA_SetNormalizedRGB eventproc
+0xFF1E0CD0 FA_DISP_Start100White eventproc
+0xFF1E0CF8 FA_DISP_End100White eventproc
+0xFF1E0D18 FA_DISP_Start50Gray eventproc
+0xFF1E0D40 FA_DISP_End50Gray eventproc
+0xFF1E0D60 FA_DISP_StartColor eventproc
+0xFF1E0DD4 FA_DISP_StartMix eventproc
+0xFF1E0DB4 FA_DISP_EndColor eventproc
+0xFF1E0E14 FA_DISP_SetBrightness eventproc
+0xFF1E0F28 FA_DISP_COM_SetCamera eventproc
+0xFF1E1014 FA_DISP_LightMeasure eventproc
+0xFF1DFA40 FA_StartLiveView eventproc
+0xFF1DFA6C FA_StopLiveView eventproc
+0xFF1DF368 FA_SetReleaseModeForSR eventproc
+0xFF1DFA98 FA_ClearReleaseModeForSR eventproc
+0xFF1DFCC0 FA_SetAccumulateTimeForSR eventproc
+0xFF1A7608 FA_IncreaseGap eventproc
+0xFF1A7668 FA_DecreaseGap eventproc
+0xFF1A681C FA_GuiFactoryClearResult eventproc
+0xFF1A66E0 FA_ShowResult eventproc
+0xFF1A6860 FA_ShowSWCK eventproc
+0xFF1A5A08 FA_SetTouchTestTime eventproc
+0xFF1A5A18 FA_SetTouchIntervalTime eventproc
+0xFF1A6A14 FA_Overwrite_DispDial_Result eventproc
+0xFF1A73D4 FA_OpenSpecialMenu eventproc
+0xFF1DFCE4 FA_StartLvTestImage eventproc
+0xFF1DFD24 FA_StopLvTestImage eventproc
+0xFF1DFD58 FA_StartLvTestExposureImage eventproc
+0xFF1DFD98 FA_StopLvTestExposureImage eventproc
+0xFF1DFDC4 FA_SetLvControlAEParam eventproc
+0xFF1E0714 FA_SetLvProjectionMode eventproc
+0xFF1DFF40 FA_SetContinuasCaptureForIso eventproc
+0xFF1DFE20 FA_SetContinuasCaptureForAccum eventproc
+0xFF1DFE58 FA_SetContinuasCaptureForIsoAccum eventproc
+0xFF1DFF78 FA_SetLvCaptureStartFrame eventproc
+0xFF1E0A80 FA_LvDefectMaxCountFull eventproc
+0xFF1E0A88 FA_LvDetectDefectsFull eventproc
+0xFF1E0AC0 FA_LvDefectMaxCountMagnify eventproc
+0xFF1E0AC8 FA_LvDetectDefectsMagnify eventproc
+0xFF1E0B00 FA_LvMargeDefectsMagnify eventproc
+0xFF1E0B40 FA_SetLvDefectMaxCountMovieCrop eventproc
+0xFF1E0B48 FA_LvDetectDefectsMovieCrop eventproc
+0xFF1DFF8C FA_YuvSsDevelopTestImage eventproc
+0xFF1DEF60 FA_RegisterPostNextCBR eventproc
+0xFF1DEF74 FA_UnregisterPostNextCBR eventproc
+0xFF1DF9A8 FA_WriteMem1File eventproc
+0xFF1DF9C4 FA_WriteMem1File2 eventproc
+0xFF1DF9E4 FA_WriteYuvFile eventproc
+# 0xFF1DEF84 Release: not listed. A shutter release only writes a picture to the card, and the kit's call()
+# wrapper blocks it anyway (only DisablePowerSave/EnablePowerSave pass, the power-save holds).
+0xFF1E0B80 FA_lv_exit eventproc
+0xFF1E0BBC FA_lv_enter eventproc
+0xFF1DEB20 FA_RemoteSRRelease eventproc
+0xFF25DDA0 lv_save_jpeg eventproc
+0xFF2862B8 InitializeResponderTransactionUSB eventproc
+0xFF287C20 InitializeResponderTransactionSDIO eventproc
+0xFF48C0A4 FA_SetProperty eventproc
+0xFF48C17C FA_SetProperty32 eventproc
+0xFF48C1A0 FA_ClearBitProperty32 eventproc
+0xFF48C300 FA_SeBitProperty32 eventproc
+0xFF48C438 FA_SaveProperty eventproc
+0xFF48C998 FA_LoadProperty eventproc
+0xFF48C9DC FA_AddProperty eventproc
+0xFF48CA64 FA_DeleteProperty eventproc
+0xFF48CAA8 FA_SyncProperty eventproc
+0xFF48C624 FA_SetSavePropertyListNum eventproc
+0xFF48C670 FA_RegistSavePropertyList eventproc
+0xFF48C770 FA_WaitSavePropertyList eventproc
+0xFF48C788 FA_SavePropertyList eventproc
+0xFF48D04C FA_SetCRawBitNum eventproc
+0xFF48D074 FA_SetDarkLevelValue eventproc
+0xFF48D074 FA_SetShadingProductionValue eventproc
+0xFF48D09C FA_SetObWindow eventproc
+0xFF48D0E8 FA_SetObIntegMode eventproc
+0xFF48D118 FA_SetProjectionMode eventproc
+0xFF48D144 FA_SetChannelNum eventproc
+0xFF48D16C FA_SetBayerComponent eventproc
+0xFF48D194 FA_SetHProjectionRange eventproc
+0xFF48D2DC FA_SetProjectionWindow eventproc
+0xFF48D320 FA_SetDetectDefThreshold eventproc
+0xFF48D390 FA_SetHLinePixelNum eventproc
+0xFF48D3BC FA_SetMergeDefParameter eventproc
+0xFF48FE14 FAC_SetupDigitalPropertyData eventproc
+0xFF48FF54 FA_SetDigitalPropertyRegisterData eventproc
+0xFF48D424 FA_SubtractTestImage eventproc
+0xFF48D608 FA_MaxSelectTestImage eventproc
+0xFF48D6DC FA_DefectsTestImage eventproc
+0xFF48D768 FA_DetectDefTestImage eventproc
+0xFF48D928 FA_ObIntegTestImage eventproc
+0xFF48DBD4 FA_DefectsMergeTestImage eventproc
+0xFF48E724 FA_ZeroFillTestImage eventproc
+0xFF48E7CC FA_ZeroFillTestImageXY eventproc
+0xFF48DC50 FA_ProjectionTestImage eventproc
+0xFF48DEF4 FA_ProjectionTestImageEx eventproc
+0xFF48E08C FA_ProjectionTestImageV eventproc
+0xFF48E6E0 FA_PaintRectangleBlack eventproc
+0xFF48E9B4 FA_EnableLinearOffset eventproc
+0xFF48E9D4 FA_DisableLinearOffset eventproc
+0xFF48E9F4 FA_EnableFnoCorrect eventproc
+0xFF48EA14 FA_DisableFnoCorrect eventproc
+0xFF48EA34 FA_EnableAccumGain eventproc
+0xFF48EA3C FA_DisableAccumGain eventproc
+0xFF48EA44 FA_EnableLtkids eventproc
+0xFF48EA54 FA_DisableLtkids eventproc
+0xFF48ED70 FA_AdjustWhiteBalance eventproc
+0xFF48EDD0 FA_SaveWbFix eventproc
+0xFF48EE08 FA_ReverseAdjust eventproc
+0xFF48F024 FA_SetWbCoef eventproc
+0xFF48F0D8 FA_SetSsWbCoef eventproc
+0xFF48F2A0 FA_UseAdjustDevelopParam eventproc
+0xFF48F2D4 FA_UseAdjustSsDevelopParam eventproc
+0xFF48F31C FA_YuvDevelopTestImage eventproc
+0xFF48F374 FA_SetColor eventproc
+0xFF48F570 FA_CreateClrAdjustShootingInfo eventproc
+0xFF48F5D0 FA_UseDefaultDevelopParam eventproc
+0xFF48F634 FA_UseDefaultSsDevelopParam eventproc
+0xFF3272AC FA_SecDifficult eventproc
+0xFF48CC70 FA_SetDefaultSetting eventproc
+0xFF31A840 FA_RecordSound eventproc
+0xFF31AB28 FA_RecordSoundEnd eventproc
+0xFF492C64 FA_MovieStart eventproc
+0xFF492D0C FA_MovieEnd eventproc
+0xFF493048 FA_DeleteFile eventproc
+0xFF4931C8 FA_FormatDrive eventproc
+0xFF35C314 EnterIsoSpeedAdjustmentMode eventproc
+0xFF35C330 ExitIsoSpeedAdjustmentMode eventproc
+0xFF45A818 saf_formatafsignal eventproc
+0xFF17658C epp_save_jpeg eventproc
+0xFF1DD884 MonWrite eventproc
+0xFF1DD8B4 FA_TestMonRead eventproc
+0xFF1DDAD4 FA_TestMonCall eventproc
+0xFF1DD9D0 FA_TestMonReadAndWrite eventproc
+0x0002A0D0 sio_FA_SendDataToEEPROM eventproc
+0x0002A0E4 sio_FA_SendDataToEEPROM16 eventproc
+0x0002A0F8 sio_FA_SendDataToEEPROM8 eventproc
+0x0002A10C sio_FA_ReceiveDataFromEEPROM eventproc
+0x0002A120 sio_FA_ResetEEPROM eventproc
+0xFF0ED000 smemFactory eventproc
+0xFF12E9BC ChangeTFTMode eventproc
+0xFF12EC24 TCH_WriteData eventproc
+0xFF1A7558 FA_SendMCellSetButton eventproc
+0xFF1A752C FA_SendRetryTestCommand eventproc
+0xFF32BE30 DeleteWhite eventproc
+0xFF32BE30 DeleteColor eventproc
+0xFF32CBF4 VramWrite eventproc
+0xFF32D5EC writeaddr eventproc
+0xFF32D618 writepb eventproc
+0xFF32D658 EnableFilter eventproc
+0xFF32D66C DisableFilter eventproc
+0xFF32D680 EnableFilterForHDMI eventproc
+0xFF32D694 DisableFilterForHDMI eventproc
+0xFF12D020 DispLockStart eventproc
+0xFF12D044 DispLockStop eventproc
+0xFF282450 InitializePTPFrameworkController eventproc
+0xFF0C9F10 update eventproc
+0xFF0C9F20 send_mpu eventproc
+0xFF0C9368 SaveRasenToFile eventproc
+0xFF0C93D4 SaveRingToFile eventproc
+0xFF0C9440 SaveLensToFile eventproc
+0xFF0CA9F4 SaveTuneToFile eventproc
+0xFF0C9A3C SaveTuneToFileForSlave eventproc
+0xFF0C9A40 SaveFixToFile eventproc
+0xFF0C9A80 FromEraseTime eventproc
+0xFF0C9B14 FromSectorWriteTime eventproc
+0xFF0C9C88 FromRingWriteTime eventproc
+0xFF0C9CD8 EepromRingWriteTime eventproc
+0xFF0C9D20 FromRasenWriteTime eventproc
+0xFF0C9E14 FromLensWriteTime eventproc
+0xFF0C9E64 FromCustomWriteTime eventproc
+0xFF0C9588 SaveLeoToFile eventproc
+0xFF0C9880 WriteLeoFromFile eventproc
+0xFF0CBF98 EnableHDMI eventproc
+0xFF0CC000 EnableVideoOut eventproc
+0xFF0CC068 EnableInternalMIC eventproc
+0xFF0CEA70 EnablePowerDomain eventproc
+0xFF0CEA80 DisablePowerDomain eventproc
+0xFF0D9878 WriteSpeedMeasureOn eventproc
+0xFF0DAD3C rmtSaveToPC eventproc
+0xFF102BCC FA_SetAdapterProperty eventproc
+0xFF133720 FA_AdjustMicBalance eventproc
+0xFF1335BC FA_PrintMicLevel eventproc
+0xFF135CB0 avs_write_vadd eventproc
+0xFF1378C8 EnableFirmware eventproc
+0xFF1378E0 DisableFirmware eventproc
+0xFF1378B0 EnableBootDisk eventproc
+0xFF1378BC DisableBootDisk eventproc
+0xFF137914 DisableMainFirm eventproc
+0xFF137920 PrepareDisableFirmware eventproc
+0xFF13AA24 sf_write eventproc
+0xFF13A9A0 sf_write_super eventproc
+0xFF13A7C8 sf_erase eventproc
+0xFF13A550 sf_allerase eventproc
+0xFF13A3D8 sf_deeppowerdown eventproc
+0xFF13A3A0 sf_releasepowerdown eventproc
+0xFF139E28 sf_on eventproc
+0xFF139E1C sf_off eventproc
+0xFF139B08 sf_write_sddata eventproc
+0xFF1386D8 sf_gang eventproc
+0xFF13C1CC flasherase eventproc
+0xFF13C2B8 flashwrite eventproc
+0xFF13C530 filewrite eventproc
+0xFF13C62C gpiowrite eventproc
+0xFF33EE18 eep_write eventproc
+0xFF33ECE0 eep_write_super eventproc
+0xFF33EA0C eep_erase eventproc
+0xFF3481B0 CardWriteChk eventproc
+0xFF34892C WriteSpeedData eventproc
+0xFF34878C WriteSpeedTSMData eventproc
+0xFF1388E0 SerialFlash eventproc
+0xFF1388AC SerialFlash eventproc
+0x0001457C lv_set_raw eventproc
+0x00014730 lv_set_raw_wp eventproc
+0x000330B8 lv_tgregwrite eventproc
+0xFF11F814 prop_saveproperty eventproc
+0xFF11F7C8 prop_savepropertydual eventproc
+0xFF11F854 prop_savepropertypartly eventproc
+0xFF11F894 prop_savepropertymultipartly eventproc
+0xFF11FA54 prop_testFactory eventproc
+0xFF121870 prop_getproperty eventproc
+0xFF12230C prop_getpropertylist eventproc
+0xFF12191C prop_readpropertytofile eventproc
+0xFF121E48 prop_writepropertyfromfile eventproc
+0xFF122150 prop_deletepropertyfromfile eventproc
+0xFF123028 prop_writemultipartly eventproc
+0xFF1230C0 prop_setnumwritemultipartly eventproc
+0xFF123134 prop_setidwritemultipartly eventproc
+0xFF123354 prop_savewritemultipartly eventproc
+0xFF130B14 EnableHDMIAudio eventproc
+0xFF130B48 DisableHDMIAudio eventproc
+0xFF130D78 I2CWrite eventproc
+0xFF14FD48 EnableFaceCatch eventproc
+0xFF14FD5C DisableFaceCatch eventproc
+0xFF14FD6C EnableWBDetection eventproc
+0xFF14FD80 DisableWBDetection eventproc
+0xFF15E0C4 EnableDebugMon eventproc
+0xFF203354 enableGero eventproc
+0xFF203350 disableGero eventproc
+0xFF2C03D4 mvrSetDeblockingFilter eventproc
+0xFF2C7AD0 FA_RemoteRelease eventproc
+0xFF2C7A58 FA_FinishRemoteRelease eventproc
+0xFF2C775C FA_EndViewFinderData eventproc
+0xFF2C772C FA_PCLVStart eventproc
+0xFF2C76FC FA_PCLVEnd eventproc
+0xFF339748 ResetAudioIC eventproc
+0xFF35C608 EnableFnoCorrect eventproc
+0xFF35C5F8 DisableFnoCorrect eventproc
+0xFF36E294 lv_save_raw eventproc
+0xFF36E9B4 lv_save_sndpas eventproc
+0xFF4CA9EC ShowMemBlock eventproc
+0xFF4CAA08 ResetMem eventproc

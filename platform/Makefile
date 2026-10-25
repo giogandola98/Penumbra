@@ -262,7 +262,9 @@ endif
 
 # If installer/99D/ML-SETUP.FIR exists, use it, otherwise
 # try and use the existing platform/99D/ML-SETUP.FIR
-ifneq ("$(wildcard $(INSTALLER_DIR)/$(ML_MODEL_DIR)/$(INSTALLER_FIR))","")
+# (ML_NO_INSTALLER_FIR=y: a profile that must not ship the installer, e.g. EOSM capture)
+ifeq ($(ML_NO_INSTALLER_FIR),y)
+else ifneq ("$(wildcard $(INSTALLER_DIR)/$(ML_MODEL_DIR)/$(INSTALLER_FIR))","")
 zip_contents:: $(INSTALLER_DIR)/$(ML_MODEL_DIR)/$(INSTALLER_FIR) | $(BUILD_DIR)
 	-$(CP) $(INSTALLER_DIR)/$(ML_MODEL_DIR)$(INSTALLER_FIR) $(ZIP_DIR)/
 

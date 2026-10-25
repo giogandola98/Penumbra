@@ -27,6 +27,15 @@
 
 #include <stub.h>
 
+/* ML_PROFILE=capture (read-only capture kit, docs/CAPTURE-KIT.md): Canon routines that change settings,
+ * image-engine registers or the audio codec are not assembled at all (WSTUB), so nothing in that build
+ * can link against them; `call` is renamed, ML's call() is then the whitelisting wrapper of capture-kit.c. */
+#ifdef CONFIG_PROFILE_CAPTURE
+#define WSTUB(addr, name)
+#else
+#define WSTUB(addr, name) NSTUB(addr, name)
+#endif
+
 .text
 
 //#define RAM_OFFSET 0xFFA69590 // some functions are copied to RAM at around ff0c009c; they have to be called from RAM...
@@ -67,9 +76,9 @@ NSTUB(0xFF0D72A0,  gui_main_task)
 // NSTUB(    ???,  GUI_SetMovieSize_b)                      /* present on 50D.109 */
 
 /** ASIF **/
-NSTUB(0xFF1350F0,  PowerAudioOutput)                        // Look for actrlCpowerControl Case 1 Sub
-NSTUB(0xFF134CE4,  PowerMicAmp)
-NSTUB(0xFF1330A0,  SetAudioVolumeOut)
+WSTUB(0xFF1350F0,  PowerAudioOutput)                        // Look for actrlCpowerControl Case 1 Sub
+WSTUB(0xFF134CE4,  PowerMicAmp)
+WSTUB(0xFF1330A0,  SetAudioVolumeOut)
 NSTUB(0xFF10B190,  SetNextASIFADCBuffer)                    // Int16
 NSTUB(0xFF10B378,  SetNextASIFDACBuffer)                    // Int16 Regular
 NSTUB(0xFF134504,  SetSamplingRate)
@@ -85,7 +94,7 @@ NSTUB(0xFF10ACC8,  StopASIFDMADAC)                          // NormalStopAsif
 /** Audio **/
 NSTUB(   0x3E46C,  sounddev)
 NSTUB(0xFF339ADC, _audio_ic_read)                           // Good Candidate i2c read
-NSTUB(0xFF339490, _audio_ic_write)                          // str:i2c(int *array)
+WSTUB(0xFF339490, _audio_ic_write)                          // str:i2c(int *array)
 NSTUB(0xFF7FBBDC,  audio_thresholds)
 NSTUB(0xFF10CD40,  sounddev_task)
 // NSTUB(    ???, _audio_ic_write_bulk)                     /* present on 6D.116 */
@@ -97,7 +106,7 @@ NSTUB(   0x6D2B4,  bmp_vram_info)                           // look in SetBitmap
 
 /** CFN **/
 NSTUB(0xFF6818B4,  GetCFnData)
-NSTUB(0xFF681ACC,  SetCFnData)
+WSTUB(0xFF681ACC,  SetCFnData)
 // NSTUB(    ???,  GUI_GetCFnForTab4)                       /* present on 7D.203 */
 // NSTUB(    ???,  GUI_SetCFnForTab4)                       /* present on 7D.203 */
 
@@ -153,13 +162,17 @@ NSTUB(   0x1CCB8,  UnregisterEDmacPopCBR)
 ///NSTUB(0xFF1B4454,  GUI_SetRollingPitchingLevelStatus)
 
 /** Engio **/
-NSTUB(0xFF2C1694, _EngDrvOut)                               // AJ_EngDrvOut_1xVar_to_ShadowStruct
-NSTUB(0xFF2C19AC, _engio_write)
+WSTUB(0xFF2C1694, _EngDrvOut)                               // AJ_EngDrvOut_1xVar_to_ShadowStruct
+WSTUB(0xFF2C19AC, _engio_write)
 NSTUB(0xFF2C1730,  shamem_read)                             // AJ_0x8FB0_engio_struct_n_R0_manipulation_to_get_ptr
 // NSTUB(    ???,  EngDrvOut)                               /* present on 7D_MASTER.203 */
 
 /** Eventprocs (call by name) **/
+#ifdef CONFIG_PROFILE_CAPTURE
+NSTUB(0xFF137C1C,  _call_unfiltered)                         // only through call() in src/capture-kit.c
+#else
 NSTUB(0xFF137C1C,  call)
+#endif
 
 /** Events **/
 NSTUB(   0x2232C,  TryPostEvent)
@@ -201,8 +214,8 @@ NSTUB(    0xBCB8,  SetTimerAfter)
 
 /** H264 Encoder **/
 NSTUB(   0x4C124,  mvr_config)
-NSTUB(0xFF2C0944,  mvrFixQScale)
-NSTUB(0xFF2C043C,  mvrSetDefQScale)
+WSTUB(0xFF2C0944,  mvrFixQScale)
+WSTUB(0xFF2C043C,  mvrSetDefQScale)
 // NSTUB(    ???,  mvrSetFullHDOptSize)                     /* present on 500D.111, 50D.109, 600D.102, 550D.109, 1100D.105 */
 // NSTUB(    ???,  mvrSetGopOptSizeFULLHD)                  /* present on 600D.102, 550D.109, 1100D.105 */
 
@@ -244,8 +257,8 @@ NSTUB(0xFF45FBDC,  ptp_register_handler)
 
 /** Properties **/
 NSTUB(0xFF12018C, _prop_cleanup)
-NSTUB(0xFF11FB04, _prop_request_change)
-NSTUB(0xFF1200C0,  prop_deliver)
+WSTUB(0xFF11FB04, _prop_request_change)
+WSTUB(0xFF1200C0,  prop_deliver)
 NSTUB(0xFF11F910,  prop_register_slave)
 // NSTUB(    ???,  prop_unregister_slave)                   /* present on 7D.203 */
 

@@ -156,3 +156,8 @@
 
 #define CONFIG_TASK_STRUCT_V2
 #define CONFIG_TASK_ATTR_STRUCT_V2
+
+/* Capture kit (ML_PROFILE=capture): read-only internals, see internals-capture.h */
+#ifdef CONFIG_PROFILE_CAPTURE
+#include "internals-capture.h"
+#endif

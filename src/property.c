@@ -417,6 +417,10 @@ ok:
     /* call Canon stub */
     extern void _prop_request_change(unsigned property, const void* addr, size_t len);
     _prop_request_change(property, addr, len);
+#elif defined(CONFIG_PROFILE_CAPTURE)
+    /* read-only capture kit: never reaches Canon (its _prop_request_change stub is not even assembled) */
+    extern void capture_blocked(const char * what, uint32_t a, uint32_t b);
+    capture_blocked("prop_request_change", property, len);
 #endif
 }
 
