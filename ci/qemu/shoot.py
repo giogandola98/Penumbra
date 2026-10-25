@@ -20,7 +20,8 @@ Scenarios (generic; which ones run and the camera specifics come from the enviro
 (PROP_SHUTTER through qemu-eos' spell injection: QEMU_EOS_SPELLS_DIR + F5), so Canon, ML and the MPU agree on it.
 
 Timeline: QEMU starts -> monitor socket -> the guest is ready (the ready markers in the DryosDebugMsg
-log) -> trigger -> wait for the pictures ("write done" lines) -> quit -> the card is read (card.py).
+log) -> trigger -> wait for the pictures (file jobs completed by Canon's writer, FILE_RE) -> quit -> the card is
+read (card.py).
 A step the emulator never reached because it did not come up (no monitor, no ready marker) is an
 INFRASTRUCTURE TIMEOUT (exit 3); pictures that do not come once the guest is running are a failure (exit 1).
 
@@ -80,6 +81,9 @@ SCENARIOS = {
 SHOT_RE = re.compile(r"\[CAPTURE\] shot (\d+): tv=0x([0-9A-F]+) av=0x([0-9A-F]+) iso=0x([0-9A-F]+) "
                      r"ae=0x([0-9A-F]+) mode=(\d+)")
 CANON_RE = re.compile(r"iso:0x([0-9a-f]+),tv:0x([0-9a-f]+),av:0x([0-9a-f]+)")
+# one per picture file written: Canon's "<file> write done (n KB/S)" is printed only when the write took at
+# least one tick of its timer, which a fast emulated card and a slow guest do not always give
+FILE_RE = re.compile(r"fwCompleteJob \(ID = \d+\)")
 
 
 def make_cards(a, sc, work):
@@ -228,7 +232,7 @@ def main():
         tp = time.monotonic()
         files = a.scenario not in cam.get("no_files", [])
         result["files_checked"] = files
-        waited = wait_log_count(log, r"write done" if files else CANON_RE.pattern, sc["pictures"],
+        waited = wait_log_count(log, FILE_RE.pattern if files else CANON_RE.pattern, sc["pictures"],
                                 a.picture_timeout, q)
         if waited is not None and not files:
             time.sleep(10)                 # let the last capture finish
@@ -236,7 +240,7 @@ def main():
         if waited is None:
             with open(log, "rb") as f:
                 text = f.read().decode(errors="replace")
-            done = text.count("write done") if files else len(CANON_RE.findall(text))
+            done = len((FILE_RE if files else CANON_RE).findall(text))
             result["errors"].append("only %d of %d %s after %.0f s" % (
                 done, sc["pictures"], "pictures written" if files else "captures", a.picture_timeout))
         time.sleep(3)                      # Canon's catalog update after the last file

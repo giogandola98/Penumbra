@@ -123,7 +123,8 @@ Per shot, the exposure ML asked for is visible three ways: the emulator's `[CAPT
 ae=.. mode=..` (the values the DIGIC last sent to the MPU), Canon's own `iso:..,tv:..,av:..` when it starts the
 capture, and the EXIF of the file (`card.py` reads the FAT card image after QEMU exits; `result.json` lists
 both, and the table goes into `comparison.md`). The scenarios are anchored to the guest (ready markers, then
-the "write done" lines of Canon's file writer); no monitor or no ready marker is an `INFRASTRUCTURE TIMEOUT`
+the file jobs Canon's file writer completes, `fwCompleteJob`; its "write done" line is printed only when the
+write took a tick of its timer); no monitor or no ready marker is an `INFRASTRUCTURE TIMEOUT`
 (exit 3, retried once), missing pictures once the guest runs are a failure. A starting shutter speed (`ml-hdr`,
 `ml-bulb`) is reported by the emulated MPU once the GUI is up, as if the dial had been turned, so Canon, ML and
 the MPU agree on it.
