@@ -196,7 +196,7 @@ static void lb_vappend(struct logbuf * lb, uint32_t ts, const char * prefix, con
     {
         char * p = lb->buf + lb->len;
         uint32_t room = lb->size - lb->len - 2;
-        int n = snprintf(p, room, "%u.%06u %s", ts / 1000000, ts % 1000000, prefix);
+        int n = snprintf(p, room, "%d.%06d %s", (int)(ts / 1000000), (int)(ts % 1000000), prefix);
         if (n > 0 && (uint32_t) n < room)
         {
             int m = vsnprintf(p + n, room - n, fmt, ap);
@@ -255,7 +255,7 @@ static int numbered(const char * pattern, char * out, int len)
 /* Until ML's memory backend is up (a few seconds after power-on) the boot capture writes into these
  * static buffers (kept small: the kit's whole footprint stays below the full ML build's); capture_init()
  * then moves it to larger heap buffers (boot_grow). */
-static char boot_dm_mem[128 * 1024];
+static char boot_dm_mem[384 * 1024];
 static char boot_mpu_mem[32 * 1024];
 static struct logbuf boot_dm  = { boot_dm_mem,  sizeof(boot_dm_mem),  0, 0 };
 static struct logbuf boot_mpu = { boot_mpu_mem, sizeof(boot_mpu_mem), 0, 0 };
@@ -276,7 +276,14 @@ static void capture_DebugMsg(int class, int level, char * fmt, ...)
     char prefix[40];
     uint32_t old = cli();
     uint32_t ts = ts_now_nolock();
-    snprintf(prefix, sizeof(prefix), "%-16.16s %02x %02x ", get_current_task_name(), class & 0xFF, level & 0xFF);
+    /* Canon's snprintf knows no %u, %p, %-16.16s (the format text comes out literally): pad by hand */
+    const char * tn = get_current_task_name();
+    char name[17];
+    int i = 0;
+    for (; tn && tn[i] && i < 16; i++) name[i] = tn[i];
+    for (; i < 16; i++) name[i] = ' ';
+    name[16] = 0;
+    snprintf(prefix, sizeof(prefix), "%s %02x %02x ", name, class & 0xFF, level & 0xFF);
     va_list ap;
     va_start(ap, fmt);
     lb_vappend(lb, ts, prefix, fmt, ap);
@@ -409,7 +416,8 @@ static void capture_poll_task(void * unused)
 
         if (boot_active)
         {
-            int full = boot_grown && (boot_dm.lost || boot_mpu.lost);
+            /* full = a grown buffer ran out (lines lost before the growth, while ML was still starting, do not count) */
+            int full = boot_grown && (boot_dm.len + 320 >= boot_dm.size || boot_mpu.len + 320 >= boot_mpu.size);
             if (full || get_ms_clock() - start > BOOT_CAPTURE_MS)
             {
                 if (dm_target == &boot_dm) dm_target = 0;
@@ -620,9 +628,9 @@ static int lv_dump(int frames)
             e2 = save_file(name, h->vram, h->pitch * h->height);
         }
         k += snprintf(info + k, sizeof(info) - k,
-            "frame %d t=%u: LV %p %dx%d pitch %d %s; HD %p %dx%d pitch %d %s; display buf %08x, HD DMA %08x\n", i, ts_now(),
-            v ? v->vram : 0, v ? v->width : 0, v ? v->height : 0, v ? v->pitch : 0, e1 ? "-" : "saved",
-            h ? h->vram : 0, h ? h->width : 0, h ? h->height : 0, h ? h->pitch : 0, e2 ? "-" : "saved",
+            "frame %d t=%d: LV %08x %dx%d pitch %d %s; HD %08x %dx%d pitch %d %s; display buf %08x, HD DMA %08x\n", i, (int)ts_now(),
+            (uint32_t)(v ? v->vram : 0), v ? v->width : 0, v ? v->height : 0, v ? v->pitch : 0, e1 ? "-" : "saved",
+            (uint32_t)(h ? h->vram : 0), h ? h->width : 0, h ? h->height : 0, h ? h->pitch : 0, e2 ? "-" : "saved",
             YUV422_LV_BUFFER_DISPLAY_ADDR, YUV422_HD_BUFFER_DMA_ADDR);
         msleep(300);
     }
@@ -650,8 +658,8 @@ static int ram_dump(const char * label, int delay_s, uint32_t size)
     snprintf(name, sizeof(name), "ML/LOGS/RAM_%s.BIN", label);
     snprintf(txt, sizeof(txt), "ML/LOGS/RAM_%s.TXT", label);
     int n = snprintf(info, sizeof(info), "start 0x40000000 size 0x%x (uncached view of DRAM 0..)\n"
-        "t=%u lv=%d disp=%d gui_menu=%d pm_counter=%d pm_mode=%d\n",
-        size, ts_now(), lv, DISPLAY_IS_ON, gui_menu_shown(), MEM(PM_COUNTER), MEM(PM_STATE + 0x0C));
+        "t=%d lv=%d disp=%d gui_menu=%d pm_counter=%d pm_mode=%d\n",
+        size, (int)ts_now(), lv, DISPLAY_IS_ON, gui_menu_shown(), MEM(PM_COUNTER), MEM(PM_STATE + 0x0C));
     FILE * f = FIO_CreateFile(name);
     if (!f) { say("RAM dump: cannot create %s", name); return -1; }
     powersave_hold("capture_ram");
@@ -801,10 +809,11 @@ static struct menu_entry capture_menu[] =
 
 static void boot_grow(struct logbuf * lb, uint32_t size)
 {
+    /* the normal heap is too small for this: the shooting memory pool (fio_malloc) is not */
     char * big = 0;
     for (uint32_t s = size; s > lb->size && !big; s /= 2)
     {
-        big = malloc(s);
+        big = fio_malloc(s);
         if (big) size = s;
     }
     if (!big) return;
@@ -817,7 +826,7 @@ static void boot_grow(struct logbuf * lb, uint32_t size)
         big = 0;
     }
     sei(old);
-    if (big) free(big);
+    if (big) fio_free(big);
 }
 
 static void capture_init()
@@ -825,6 +834,7 @@ static void capture_init()
     boot_grow(&boot_dm, 2 * 1024 * 1024);
     boot_grow(&boot_mpu, 256 * 1024);
     boot_grown = 1;
+    DryosDebugMsg(0, 15, "[CAPTURE] boot buffers: dm %d KB (used %d), mpu %d KB", boot_dm.size / 1024, boot_dm.len / 1024, boot_mpu.size / 1024);
     menu_add("Capture", capture_menu, COUNT(capture_menu));
     if (is_file("ML/CAPTEST.TXT"))
     {

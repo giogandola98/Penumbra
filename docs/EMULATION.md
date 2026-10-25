@@ -242,6 +242,27 @@ Needs podman (the CI runner has it). With podman and a `read:package` token:
 Interactive use (GUI via VNC): run `qemu-system-arm` from the image with `-vnc :1` instead of
 `-display none` (see the command `scenario.py` prints), and send keys through the monitor (`sendkey`).
 
+### Capture kit (EOS M)
+
+`ci/qemu/capture_kit.py` boots the read-only capture kit (`ML_PROFILE=capture`, `docs/CAPTURE-KIT.md`) in qemu-eos
+with `ML/CAPTEST.TXT` on the card, lets it run every capture once, and fails on a hang, a missing capture file,
+a refused write, any serial flash program/erase, any `WREN`/`WRSR` outside Canon's start-up task, or any ROM write
+(`-d sflash,romw`). It is self-contained and does not need the `run_cam.sh` machinery. It needs `ROM0.BIN`,
+`ROM1.BIN` and `SFDATA.BIN` in `<rom-dir>/EOSM/` (read only; copied to a scratch dir) and, to build the card,
+mtools and `platform/sd.qcow2.xz` (both in the qemu-eos image):
+
+    (cd platform/EOSM.202 && make ML_PROFILE=capture FATAL_WARNINGS=y)
+    podman run --rm --tmpfs /tmp -v "$PWD":/work -v ~/roms:/roms:ro -w /work "$IMG" \
+        python3 -I ci/qemu/capture_kit.py --zip platform/EOSM.202/build/magiclantern.zip \
+        --rom-dir /roms --out emu-out/capture-kit
+
+Without the image: set `QEMU_EOS` to a prefix holding `bin/qemu-system-arm` and `plugins/libmagiclantern.so`, and
+pass a prepared card with `--sd IMG --fat-offset BYTES` (it must hold `autoexec.bin`, the zip's `ML/` and
+`ML/CAPTEST.TXT`). It finishes in about two minutes. Results: `capture-kit.txt` (card files, serial flash opcode
+counts, problems), `qemu.log`, and the kit's `CAPTEST.OK`/`BOOTINFO.TXT`/`LVINFO.TXT`/`PM00.LOG`.
+Exit codes: 0 pass (or SKIPPED without ROMs), 1 check failed, 3 hang / emulator never got there.
+The CI `emulation` job does not run it yet (it is added with the EOS M emulation job).
+
 ## ROM handling
 
 ROM dumps (ROM0.BIN, ROM1.BIN, SFDATA.BIN) are Canon firmware read from the maintainer's own camera.
