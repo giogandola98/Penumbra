@@ -7,16 +7,19 @@
 # docs/models/EOSM.md). No deep sleep is modelled by qemu-eos for this camera, so no display-off segment.
 # The real camera agrees so far (capture kit, 2026-10): the counter is 2 in LiveView, the menus and playback
 # (DisplayMgr while the display is on + CtrlSrv), reaches 0 only for ~12 ms on GUI-mode changes, and PowerMgr
-# never left mode 1; how it enters selfRefresh (display off) has not been captured yet.
+# never left mode 1; how it enters selfRefresh (display off) has not been captured yet. The emulator matches it
+# in LiveView too since qemu-eos models the Eeko core (LiveView white balance answered, LCD on with mute).
 PM_COUNTER_ADDR=${PM_COUNTER_ADDR:-0x3EE5C}
 DISPLAY_OFF_S=${DISPLAY_OFF_S:-0}
 
-# Guest ready for the canon scenario: Canon's start-up task is done. The camera starts in LiveView with a muted
-# grey screen (no sensor frames), so the display says nothing; this line (QEMU-EOS-Optimized docs/models/EOSM.md)
-# does. Canon's power-save counter never reaches 0 here: no deep sleep to check.
+# Guest ready for the canon scenario: Canon's start-up task is done. The camera starts in LiveView: Canon turns
+# the LCD on with the image muted (grey; no sensor frames) once LiveView white balance has started on the
+# emulated Eeko core, so the display says nothing; this line (QEMU-EOS-Optimized docs/models/EOSM.md,
+# docs/models/eeko.md) does. Canon's power-save counter never reaches 0 here: no deep sleep to check.
 CANON_READY=${CANON_READY:-startupInitializeComplete}
 
-# Shooting scenarios: the pinned QEMU image has no photo capture emulation for this camera.
+# Shooting scenarios: the pinned QEMU image has no photo capture emulation for this camera (a release stops in
+# LiveView's sensor standby, before development on Eeko: QEMU-EOS-Optimized docs/models/EOSM.md, "Capture").
 SHOOT_CANON_READY=${SHOOT_CANON_READY-}
 SHOOT_SHUTTER_KEY=${SHOOT_SHUTTER_KEY-}
 SHOOT_SCENARIOS=${SHOOT_SCENARIOS-}
