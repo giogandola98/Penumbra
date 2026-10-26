@@ -94,5 +94,11 @@ code paths are exercised, the data is only real on the camera.
 - The boot log lives in RAM (2 MiB when the heap allows it, 384 KiB at the very start): the first few thousand
   lines of a boot, written before the kit's own initialisation, can be lost; the count is in `BOOTINFO.TXT`.
 - Debug-message class 21 (engine register writes, one line per write) is not logged: it floods the buffer.
+- The sensor's ADTG/CMOS register tables (class 0x91 level 1, `[REG] ...`), which Canon prints again for every
+  LiveView frame, are kept for the first 4000 lines of each log and then only counted (`BOOTINFO.TXT`, and the
+  `session end` line): on the camera they filled a quarter of every 4 MiB session, which then stopped after
+  6-28 s instead of the time chosen.
+- ML's own menu dims Canon's bitmap palette (512 `EngDrvOut` per redraw). The kit blocks them like any other
+  write but logs one line per 512 (`blocked ... palette writes`); `BOOTINFO.TXT` gives the count.
 - Canon's `snprintf` does not know `%u`, `%p` or width/precision on `%s`: the kit formats numbers with `%d`/`%x`
   and pads by hand. Keep that in mind when adding log lines.

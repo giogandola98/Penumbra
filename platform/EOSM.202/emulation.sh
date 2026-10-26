@@ -4,8 +4,10 @@
 
 # Canon's power-save counter in RAM, sampled during the window: state block 0x3EE58, counter at 0x3EE5C
 # (DisablePowerSave 0xFF137DDC / EnablePowerSave 0xFF137E48; canon-firmware-re notes, QEMU-EOS-Optimized
-# docs/models/EOSM.md). No deep sleep is modelled by qemu-eos for this camera (the counter stays >= 1 in
-# LiveView), so no display-off segment.
+# docs/models/EOSM.md). No deep sleep is modelled by qemu-eos for this camera, so no display-off segment.
+# The real camera agrees so far (capture kit, 2026-10): the counter is 2 in LiveView, the menus and playback
+# (DisplayMgr while the display is on + CtrlSrv), reaches 0 only for ~12 ms on GUI-mode changes, and PowerMgr
+# never left mode 1; how it enters selfRefresh (display off) has not been captured yet.
 PM_COUNTER_ADDR=${PM_COUNTER_ADDR:-0x3EE5C}
 DISPLAY_OFF_S=${DISPLAY_OFF_S:-0}
 

@@ -133,10 +133,24 @@ static int sigs_ok(const struct code_sig * s, int n, char * why, int why_len)
 static volatile int blocked_count = 0;
 static char blocked_last[48] = "";
 
+/* ML's menu dims Canon's bitmap palette while it is open (menu.c / tweaks.c, 2 x 256 EngDrvOut to
+ * 0xC0F14400..0xC0F14BFF per redraw). Blocked like any other write, but logged once per 512: on the camera
+ * the per-write lines took ~1500 lines of every session log. */
+#define PALETTE_REGS_START      0xC0F14400
+#define PALETTE_REGS_END        0xC0F14C00
+static volatile int blocked_palette = 0;
+
 void capture_blocked(const char * what, uint32_t a, uint32_t b)
 {
     blocked_count++;
     snprintf(blocked_last, sizeof(blocked_last), "%s(%x,%x)", what, a, b);
+    if (what[0] == 'E' && what[1] == 'n' && a >= PALETTE_REGS_START && a < PALETTE_REGS_END)
+    {
+        if (blocked_palette++ % 512) return;
+        DryosDebugMsg(0, 15, "[CAPTURE] blocked EngDrvOut palette writes (%d so far, this one %x, %x)",
+                      blocked_palette, a, b);
+        return;
+    }
     DryosDebugMsg(0, 15, "[CAPTURE] blocked %s(%x, %x)", what, a, b);
 }
 
@@ -187,7 +201,9 @@ static uint32_t ts_now(void)
 
 /* ---- log buffers ------------------------------------------------------------------------------------ */
 
-struct logbuf { char * buf; uint32_t size; volatile uint32_t len; volatile uint32_t lost; };
+struct logbuf { char * buf; uint32_t size; volatile uint32_t len; volatile uint32_t lost;
+                uint32_t reg_lines, reg_dropped; };     /* Evf [REG] lines seen / not logged (capture_DebugMsg) */
+#define REG_LINES_KEPT          4000
 
 static void lb_vappend(struct logbuf * lb, uint32_t ts, const char * prefix, const char * fmt, va_list ap)
 {
@@ -257,8 +273,8 @@ static int numbered(const char * pattern, char * out, int len)
  * then moves it to larger heap buffers (boot_grow). */
 static char boot_dm_mem[384 * 1024];
 static char boot_mpu_mem[32 * 1024];
-static struct logbuf boot_dm  = { boot_dm_mem,  sizeof(boot_dm_mem),  0, 0 };
-static struct logbuf boot_mpu = { boot_mpu_mem, sizeof(boot_mpu_mem), 0, 0 };
+static struct logbuf boot_dm  = { boot_dm_mem,  sizeof(boot_dm_mem),  0, 0, 0, 0 };
+static struct logbuf boot_mpu = { boot_mpu_mem, sizeof(boot_mpu_mem), 0, 0, 0, 0 };
 static struct logbuf sess_dm, sess_mpu, sess_pm;
 
 static struct logbuf * volatile dm_target = 0;     /* where DryosDebugMsg lines go (0 = nowhere) */
@@ -272,6 +288,10 @@ static void capture_DebugMsg(int class, int level, char * fmt, ...)
     struct logbuf * lb = dm_target;
     if (!lb || !fmt) return;
     if (class == 21) return;    /* engio: one line per register write, floods the buffer (as upstream dm-spy) */
+    /* Evf class 0x91 level 1 = the sensor's ADTG/CMOS register tables ("[REG] ..."), dumped again for
+     * every LiveView frame: a quarter of a 4 MiB session filled in 6-28 s on the camera. Keep the first
+     * REG_LINES_KEPT of each log (LiveView start, the tables themselves), count the rest. */
+    if (class == 0x91 && level == 1 && lb->reg_lines++ >= REG_LINES_KEPT) { lb->reg_dropped++; return; }
 
     char prefix[40];
     uint32_t old = cli();
@@ -465,10 +485,11 @@ static void save_boot_logs(void)
     }
     int a = save_file("ML/LOGS/BOOTDM.LOG", boot_dm.buf, boot_dm.len);
     int b = save_file("ML/LOGS/BOOTMPU.LOG", boot_mpu.buf, boot_mpu.len);
-    char info[160];
+    char info[224];
     int n = snprintf(info, sizeof(info), "boot capture: dm %d bytes, %d lines lost; mpu %d bytes, %d lines lost; "
-        "mpu sent %d recv %d; blocked writes %d\n", boot_dm.len, boot_dm.lost, boot_mpu.len, boot_mpu.lost,
-        mpu_sent, mpu_recvd, blocked_count);
+        "mpu sent %d recv %d; blocked writes %d (palette %d); sensor [REG] lines not logged %d\n",
+        boot_dm.len, boot_dm.lost, boot_mpu.len, boot_mpu.lost,
+        mpu_sent, mpu_recvd, blocked_count, blocked_palette, boot_dm.reg_dropped);
     save_file("ML/LOGS/BOOTINFO.TXT", info, n);
     say("Boot logs %s: DM %d KB (%d lost), MPU %d KB", (a || b) ? "NOT saved" : "saved",
         boot_dm.len / 1024, boot_dm.lost, boot_mpu.len / 1024);
@@ -519,6 +540,7 @@ static int sf_dump(void)
 static int alloc_log(struct logbuf * lb, uint32_t size)
 {
     lb->len = lb->lost = 0;
+    lb->reg_lines = lb->reg_dropped = 0;
     lb->size = 0;
     for (uint32_t s = size; s >= 64 * 1024; s /= 2)
     {
@@ -566,7 +588,7 @@ static void session_task(void * unused)
         msleep(100);
     }
     const char * why = session_stop_req ? "stopped from the menu" : sess_dm.lost || sess_mpu.lost ? "buffer full" : "time over";
-    lb_append(&sess_dm, "[CAPTURE] ", "session end (%s)", why);
+    lb_append(&sess_dm, "[CAPTURE] ", "session end (%s), sensor [REG] lines not logged %d", why, sess_dm.reg_dropped);
 
     old = cli();
     pm_target = 0;
